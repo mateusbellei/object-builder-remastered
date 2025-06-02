@@ -929,17 +929,32 @@ function parseTexturePatterns(
 
     // Frame groups (for newer versions that support them)
     let groupCount = 1;
+    let originalGroupCount = 1; // Track what was actually read from file
     if (protocol.hasFrameGroups && thing.category === ThingCategory.OUTFIT) {
       if (reader.bytesAvailable >= 1) {
-        groupCount = reader.readUint8();
+        originalGroupCount = reader.readUint8();
+        groupCount = originalGroupCount;
         if (shouldLog) {
-          console.log(`🎨 Outfit ${thing.id} has ${groupCount} frame groups`);
+          console.log(
+            `🎨 Outfit ${thing.id} has ${originalGroupCount} frame groups`
+          );
+        }
+        // Critical fix: If groupCount is 0, the outfit doesn't have frame groups in the file
+        // but we still need to parse the standard pattern data
+        if (groupCount === 0) {
+          groupCount = 1; // Parse as a single default group
+          if (shouldLog) {
+            console.log(
+              `🎨 Outfit ${thing.id} groupCount was 0, using default group`
+            );
+          }
         }
       } else {
         console.warn(
           `Not enough bytes to read group count for thing ${thing.id}`
         );
         groupCount = 1;
+        originalGroupCount = 1;
       }
     }
 
@@ -955,7 +970,12 @@ function parseTexturePatterns(
 
       // For outfits with frame groups, read an extra byte (group type)
       // This happens AFTER reading group count but BEFORE reading dimensions
-      if (protocol.hasFrameGroups && thing.category === ThingCategory.OUTFIT) {
+      // BUT only if the original groupCount was > 0 (outfit has frame groups in file)
+      if (
+        protocol.hasFrameGroups &&
+        thing.category === ThingCategory.OUTFIT &&
+        originalGroupCount > 0
+      ) {
         const groupType = reader.readUint8(); // This byte indicates the group type
         if (shouldLog) {
           console.log(`🎨 Reading outfit group type: ${groupType}`);
