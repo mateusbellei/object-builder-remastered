@@ -945,8 +945,8 @@ function parseTexturePatterns(
 
     for (let g = 0; g < groupCount; g++) {
       // Check if we have enough bytes for frame group header
-      if (reader.bytesAvailable < 6) {
-        // Minimum bytes needed
+      if (reader.bytesAvailable < 5) {
+        // Minimum bytes needed: width, height, layers, patternX, patternY
         console.warn(
           `Not enough bytes to read frame group ${g} for thing ${thing.id}`
         );
@@ -954,11 +954,8 @@ function parseTexturePatterns(
       }
 
       // For outfits with frame groups, read an extra byte (group type)
-      if (
-        protocol.hasFrameGroups &&
-        thing.category === ThingCategory.OUTFIT &&
-        groupCount > 1
-      ) {
+      // This happens AFTER reading group count but BEFORE reading dimensions
+      if (protocol.hasFrameGroups && thing.category === ThingCategory.OUTFIT) {
         const groupType = reader.readUint8(); // This byte indicates the group type
         if (shouldLog) {
           console.log(`🎨 Reading outfit group type: ${groupType}`);
@@ -997,12 +994,20 @@ function parseTexturePatterns(
         }
       }
 
-      // Continue reading the standard fields
+      // Continue reading the standard fields in exact Object Builder order
       if (reader.bytesAvailable >= 4) {
         frameGroup.layers = reader.readUint8() || 1;
         frameGroup.patternX = reader.readUint8();
         frameGroup.patternY = reader.readUint8();
-        frameGroup.patternZ = 1; // Always 1 based on original code
+
+        // Critical fix: For protocol 10.98, patternZ is read from file!
+        // Only for newer protocols (12.86+) is it hardcoded to 1
+        if (protocol.version === "10.98") {
+          frameGroup.patternZ = reader.readUint8();
+        } else {
+          frameGroup.patternZ = 1; // Hardcoded for newer protocols
+        }
+
         frameGroup.frames = reader.readUint8();
       } else {
         console.warn(
@@ -1017,31 +1022,59 @@ function parseTexturePatterns(
         );
       }
 
-      // Validate frame group dimensions
+      // Enhanced validation with more reasonable limits
       if (
+        frameGroup.width === 0 ||
         frameGroup.width > 10 ||
+        frameGroup.height === 0 ||
         frameGroup.height > 10 ||
+        frameGroup.layers === 0 ||
         frameGroup.layers > 10
       ) {
         console.warn(
           `Invalid frame group dimensions for thing ${thing.id}: ${frameGroup.width}x${frameGroup.height}x${frameGroup.layers}`
         );
-        frameGroup.width = Math.min(frameGroup.width, 10);
-        frameGroup.height = Math.min(frameGroup.height, 10);
-        frameGroup.layers = Math.min(frameGroup.layers, 10);
+        // Create a minimal safe frame group
+        thing.frameGroups[FrameGroupType.DEFAULT] = {
+          type: FrameGroupType.DEFAULT,
+          width: 1,
+          height: 1,
+          layers: 1,
+          patternX: 1,
+          patternY: 1,
+          patternZ: 1,
+          frames: 1,
+          spriteIds: [],
+        };
+        continue;
       }
 
       if (
-        frameGroup.patternX > 10 ||
-        frameGroup.patternY > 10 ||
+        frameGroup.patternX === 0 ||
+        frameGroup.patternX > 20 ||
+        frameGroup.patternY === 0 ||
+        frameGroup.patternY > 20 ||
+        frameGroup.patternZ === 0 ||
+        frameGroup.patternZ > 20 ||
+        frameGroup.frames === 0 ||
         frameGroup.frames > 100
       ) {
         console.warn(
-          `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}, frames: ${frameGroup.frames}`
+          `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
         );
-        frameGroup.patternX = Math.min(frameGroup.patternX, 10);
-        frameGroup.patternY = Math.min(frameGroup.patternY, 10);
-        frameGroup.frames = Math.min(frameGroup.frames, 100);
+        // Create a minimal safe frame group
+        thing.frameGroups[FrameGroupType.DEFAULT] = {
+          type: FrameGroupType.DEFAULT,
+          width: 1,
+          height: 1,
+          layers: 1,
+          patternX: 1,
+          patternY: 1,
+          patternZ: 1,
+          frames: 1,
+          spriteIds: [],
+        };
+        continue;
       }
 
       // Update thing dimensions from first frame group
@@ -1070,9 +1103,9 @@ function parseTexturePatterns(
       }
 
       // Validate total sprites count
-      if (totalSprites > 10000) {
+      if (totalSprites <= 0 || totalSprites > 4096) {
         console.warn(
-          `Too many sprites calculated for thing ${thing.id}: ${totalSprites}, skipping sprite reading`
+          `Invalid sprites count for thing ${thing.id}: ${totalSprites}, creating minimal frame group`
         );
         // Set minimal frame group to avoid memory issues
         thing.frameGroups[FrameGroupType.DEFAULT] = {
@@ -1086,26 +1119,33 @@ function parseTexturePatterns(
           frames: 1,
           spriteIds: [],
         };
-        break;
+        continue;
       }
 
-      // Check if we have enough bytes for all sprite IDs (4 bytes each)
-      const bytesNeeded = totalSprites * 4;
+      // Determine sprite ID size based on protocol version
+      // According to Object Builder source: extended determines if sprite IDs are 4 bytes (true) or 2 bytes (false)
+      const spriteIdSize = protocol.hasExtended ? 4 : 2;
+      const bytesNeeded = totalSprites * spriteIdSize;
+
       if (reader.bytesAvailable < bytesNeeded) {
         console.warn(
           `Not enough bytes to read ${totalSprites} sprite IDs for thing ${thing.id} (need ${bytesNeeded}, have ${reader.bytesAvailable})`
         );
         // Read as many as we can
-        const maxSprites = Math.floor(reader.bytesAvailable / 4);
+        const maxSprites = Math.floor(reader.bytesAvailable / spriteIdSize);
         for (let i = 0; i < maxSprites; i++) {
-          const spriteId = reader.readUint32();
+          const spriteId = protocol.hasExtended
+            ? reader.readUint32()
+            : reader.readUint16();
           frameGroup.spriteIds.push(spriteId);
           thing.spriteIds.push(spriteId);
         }
       } else {
-        // Read sprite IDs
+        // Read sprite IDs with correct size
         for (let i = 0; i < totalSprites; i++) {
-          const spriteId = reader.readUint32();
+          const spriteId = protocol.hasExtended
+            ? reader.readUint32()
+            : reader.readUint16();
           frameGroup.spriteIds.push(spriteId);
           thing.spriteIds.push(spriteId);
         }
@@ -1113,19 +1153,46 @@ function parseTexturePatterns(
 
       if (shouldLog) {
         console.log(
-          `🎨 Read ${frameGroup.spriteIds.length} sprite IDs for frame group ${g}`
+          `🎨 Read ${
+            frameGroup.spriteIds.length
+          } sprite IDs for group ${g}, first few: [${frameGroup.spriteIds
+            .slice(0, 5)
+            .join(", ")}]`
         );
       }
 
-      // Store frame group
+      // Store the frame group
       thing.frameGroups[frameGroup.type] = frameGroup;
     }
+
+    // Ensure we always have at least a default frame group
+    if (!thing.frameGroups[FrameGroupType.DEFAULT]) {
+      thing.frameGroups[FrameGroupType.DEFAULT] = {
+        type: FrameGroupType.DEFAULT,
+        width: thing.width || 1,
+        height: thing.height || 1,
+        layers: thing.layers || 1,
+        patternX: thing.patternX || 1,
+        patternY: thing.patternY || 1,
+        patternZ: thing.patternZ || 1,
+        frames: thing.frames || 1,
+        spriteIds: [...thing.spriteIds],
+      };
+    }
+
+    if (shouldLog) {
+      console.log(
+        `🎨 Finished texture patterns for ${thing.category} ${
+          thing.id
+        }, total frame groups: ${Object.keys(thing.frameGroups).length}`
+      );
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `Error parsing texture patterns for thing ${thing.id}: ${message}`
+    console.error(
+      `Error parsing texture patterns for ${thing.category} ${thing.id}:`,
+      error
     );
-    // Set defaults if parsing fails
+    // Create a minimal safe frame group
     thing.frameGroups[FrameGroupType.DEFAULT] = {
       type: FrameGroupType.DEFAULT,
       width: 1,
