@@ -20,23 +20,84 @@
         </div>
         <div class="flex justify-between">
           <span class="text-gray-600">Outfits:</span>
-          <span class="font-medium text-blue-600">{{ getOutfits.length }}</span>
+          <span
+            class="font-medium"
+            :class="getOutfits.length > 0 ? 'text-blue-600' : 'text-red-600'"
+          >
+            {{ getOutfits.length
+            }}{{ getOutfits.length === 0 ? " (FAILED)" : "" }}
+          </span>
         </div>
         <div class="flex justify-between">
           <span class="text-gray-600">Effects:</span>
-          <span class="font-medium text-purple-600">{{
-            getEffects.length
-          }}</span>
+          <span
+            class="font-medium"
+            :class="getEffects.length > 0 ? 'text-purple-600' : 'text-red-600'"
+          >
+            {{ getEffects.length
+            }}{{ getEffects.length === 0 ? " (FAILED)" : "" }}
+          </span>
         </div>
         <div class="flex justify-between">
           <span class="text-gray-600">Missiles:</span>
-          <span class="font-medium text-red-600">{{ getMissiles.length }}</span>
+          <span
+            class="font-medium"
+            :class="getMissiles.length > 0 ? 'text-red-600' : 'text-red-600'"
+          >
+            {{ getMissiles.length
+            }}{{ getMissiles.length === 0 ? " (FAILED)" : "" }}
+          </span>
         </div>
         <div class="flex justify-between">
           <span class="text-gray-600">Sprites:</span>
           <span class="font-medium text-gray-600">{{
             getSprites.length.toLocaleString()
           }}</span>
+        </div>
+      </div>
+
+      <!-- Debug Info Toggle -->
+      <div class="mt-3">
+        <button
+          @click="showDebugInfo = !showDebugInfo"
+          class="text-xs text-gray-500 hover:text-gray-700 underline"
+        >
+          {{ showDebugInfo ? "Hide" : "Show" }} Debug Info
+        </button>
+      </div>
+
+      <!-- Debug Info -->
+      <div v-if="showDebugInfo" class="mt-3 p-3 bg-gray-50 rounded text-xs">
+        <div class="space-y-1">
+          <div>
+            <strong>Protocol Detection:</strong> {{ projectState.protocol }}
+          </div>
+          <div>
+            <strong>Has Frame Groups:</strong>
+            {{ protocolInfo?.hasFrameGroups ? "Yes" : "No" }}
+          </div>
+          <div class="mt-2">
+            <strong>Parsing Issues:</strong>
+            <div v-if="getOutfits.length === 0" class="text-red-600">
+              • Outfits: All failed to parse
+            </div>
+            <div v-if="getEffects.length === 0" class="text-red-600">
+              • Effects: All failed to parse
+            </div>
+            <div v-if="getMissiles.length === 0" class="text-red-600">
+              • Missiles: All failed to parse
+            </div>
+            <div
+              v-if="
+                getOutfits.length > 0 &&
+                getEffects.length > 0 &&
+                getMissiles.length > 0
+              "
+              class="text-green-600"
+            >
+              • All categories parsed successfully
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -176,11 +237,13 @@ const {
   getEffects,
   getMissiles,
   getSprites,
+  protocolInfo,
 } = useTibiaFiles();
 
 const activeTab = ref("items");
 const searchQuery = ref("");
 const selectedItem = ref<ThingType | null>(null);
+const showDebugInfo = ref(false);
 
 const tabs = computed(() => [
   { id: "items", name: "Items", count: getItems.value.length },

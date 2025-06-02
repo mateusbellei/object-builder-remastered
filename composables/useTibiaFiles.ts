@@ -754,11 +754,19 @@ export const useTibiaFiles = () => {
     return await parseSprFile(file);
   };
 
+  /**
+   * Get current protocol information
+   */
+  const protocolInfo = computed(() => {
+    return PROTOCOL_VERSIONS[projectState.protocol] || null;
+  });
+
   return {
     // Protocol and version info
     protocols: PROTOCOL_VERSIONS,
     projectState: readonly(projectState),
     loadingProgress: readonly(loadingProgress),
+    protocolInfo,
 
     // File operations
     loadProject,

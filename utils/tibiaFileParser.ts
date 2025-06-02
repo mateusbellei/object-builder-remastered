@@ -944,25 +944,78 @@ function parseTexturePatterns(
     }
 
     for (let g = 0; g < groupCount; g++) {
-      // Check if we have enough bytes for frame group header (7 bytes minimum)
-      if (reader.bytesAvailable < 7) {
+      // Check if we have enough bytes for frame group header
+      if (reader.bytesAvailable < 6) {
+        // Minimum bytes needed
         console.warn(
           `Not enough bytes to read frame group ${g} for thing ${thing.id}`
         );
         break;
       }
 
+      // For outfits with frame groups, read an extra byte (group type)
+      if (
+        protocol.hasFrameGroups &&
+        thing.category === ThingCategory.OUTFIT &&
+        groupCount > 1
+      ) {
+        const groupType = reader.readUint8(); // This byte indicates the group type
+        if (shouldLog) {
+          console.log(`🎨 Reading outfit group type: ${groupType}`);
+        }
+      }
+
       const frameGroup: FrameGroup = {
         type: g === 0 ? FrameGroupType.DEFAULT : FrameGroupType.WALKING,
         width: reader.readUint8(),
         height: reader.readUint8(),
-        layers: reader.readUint8() || 1,
-        patternX: reader.readUint8(),
-        patternY: reader.readUint8(),
-        patternZ: reader.readUint8(),
-        frames: reader.readUint8(),
+        layers: 1,
+        patternX: 1,
+        patternY: 1,
+        patternZ: 1,
+        frames: 1,
         spriteIds: [],
       };
+
+      if (shouldLog) {
+        console.log(
+          `🎨 Frame group ${g}: ${frameGroup.width}x${frameGroup.height}`
+        );
+      }
+
+      // Read exactSize if width > 1 or height > 1 (this field exists in the original)
+      if (frameGroup.width > 1 || frameGroup.height > 1) {
+        if (reader.bytesAvailable >= 1) {
+          const exactSize = reader.readUint8();
+          if (shouldLog) {
+            console.log(`🎨 Read exactSize: ${exactSize}`);
+          }
+        } else {
+          console.warn(
+            `Not enough bytes to read exactSize for thing ${thing.id}`
+          );
+        }
+      }
+
+      // Continue reading the standard fields
+      if (reader.bytesAvailable >= 4) {
+        frameGroup.layers = reader.readUint8() || 1;
+        frameGroup.patternX = reader.readUint8();
+        frameGroup.patternY = reader.readUint8();
+        frameGroup.patternZ = 1; // Always 1 based on original code
+        frameGroup.frames = reader.readUint8();
+      } else {
+        console.warn(
+          `Not enough bytes to read patterns/frames for thing ${thing.id}`
+        );
+        break;
+      }
+
+      if (shouldLog) {
+        console.log(
+          `🎨 Full frame group ${g}: ${frameGroup.width}x${frameGroup.height}, layers: ${frameGroup.layers}, patterns: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
+        );
+      }
 
       // Validate frame group dimensions
       if (
@@ -981,15 +1034,13 @@ function parseTexturePatterns(
       if (
         frameGroup.patternX > 10 ||
         frameGroup.patternY > 10 ||
-        frameGroup.patternZ > 10 ||
         frameGroup.frames > 100
       ) {
         console.warn(
-          `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
+          `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}, frames: ${frameGroup.frames}`
         );
         frameGroup.patternX = Math.min(frameGroup.patternX, 10);
         frameGroup.patternY = Math.min(frameGroup.patternY, 10);
-        frameGroup.patternZ = Math.min(frameGroup.patternZ, 10);
         frameGroup.frames = Math.min(frameGroup.frames, 100);
       }
 
@@ -1014,10 +1065,14 @@ function parseTexturePatterns(
         frameGroup.patternZ *
         frameGroup.frames;
 
+      if (shouldLog) {
+        console.log(`🎨 Total sprites needed: ${totalSprites}`);
+      }
+
       // Validate total sprites count
       if (totalSprites > 10000) {
         console.warn(
-          `Too many sprites calculated for thing ${thing.id}: ${totalSprites}, limiting to 100`
+          `Too many sprites calculated for thing ${thing.id}: ${totalSprites}, skipping sprite reading`
         );
         // Set minimal frame group to avoid memory issues
         thing.frameGroups[FrameGroupType.DEFAULT] = {
@@ -1054,6 +1109,12 @@ function parseTexturePatterns(
           frameGroup.spriteIds.push(spriteId);
           thing.spriteIds.push(spriteId);
         }
+      }
+
+      if (shouldLog) {
+        console.log(
+          `🎨 Read ${frameGroup.spriteIds.length} sprite IDs for frame group ${g}`
+        );
       }
 
       // Store frame group
