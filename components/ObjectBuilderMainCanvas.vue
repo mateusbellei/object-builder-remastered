@@ -199,16 +199,20 @@
     <div
       class="bg-gray-800 border-t border-gray-700 p-2 flex items-center justify-between text-xs"
     >
-      <div class="flex items-center space-x-4">
-        <span class="text-gray-400">Zoom:</span>
-        <URange
-          v-model="zoomLevel"
-          :min="0.5"
-          :max="5"
-          :step="0.1"
-          class="w-20"
+      <!-- Zoom Controls -->
+      <div class="flex items-center space-x-2 mr-4">
+        <span class="text-xs text-gray-500">Zoom:</span>
+        <input
+          v-model.number="zoomLevel"
+          type="range"
+          min="0.5"
+          max="5"
+          step="0.1"
+          class="w-20 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
         />
-        <span>{{ Math.round(zoomLevel * 100) }}%</span>
+        <span class="text-xs text-gray-500 min-w-[2rem]"
+          >{{ Math.round(zoomLevel * 100) }}%</span
+        >
       </div>
 
       <div class="flex items-center space-x-4">

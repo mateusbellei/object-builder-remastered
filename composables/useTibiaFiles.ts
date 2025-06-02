@@ -1,99 +1,38 @@
-export interface TibiaSprite {
-  id: number;
-  width: number;
-  height: number;
-  xOffset?: number;
-  yOffset?: number;
-  hasTransparency?: boolean;
-  isCompressed?: boolean;
-  data?: string | null;
-  canvas?: HTMLCanvasElement;
-}
+import type {
+  ProjectData,
+  DatFileData,
+  SprFileData,
+  OtfiMetadata,
+  ThingType,
+  TibiaSprite,
+  ProtocolVersion,
+  LoadFileOptions,
+  ExportOptions,
+  SpriteSheetOptions,
+  ImportSpriteSheetOptions,
+} from "~/types/tibia";
 
-export interface TibiaObject {
-  id: number;
-  name?: string;
-  width: number;
-  height: number;
-  layers: number;
-  patternX: number;
-  patternY: number;
-  patternZ: number;
-  frames: number;
-  spriteIds: number[];
-  properties: Record<string, any>;
-}
+import {
+  PROTOCOL_VERSIONS,
+  TibiaFileError,
+  ThingCategory,
+} from "~/types/tibia";
 
-export interface DatFileData {
-  signature: number;
-  itemCount: number;
-  outfitCount: number;
-  effectCount: number;
-  missileCount: number;
-  items: TibiaObject[];
-  outfits: TibiaObject[];
-  effects: TibiaObject[];
-  missiles: TibiaObject[];
-}
-
-export interface SprFileData {
-  signature: number;
-  spriteCount: number;
-  sprites: TibiaSprite[];
-  spriteOffsets: number[];
-}
+import {
+  parseDatFile,
+  parseSprFile,
+  parseOtfiFile,
+  getProtocolForClientVersion,
+} from "~/utils/tibiaFileParser";
 
 export const useTibiaFiles = () => {
-  // Protocol versions and their characteristics
-  const protocols = {
-    "7.10": {
-      datSignature: 0x00000000,
-      sprSignature: 0x00000000,
-      hasExtended: false,
-      hasFrameGroups: false,
-    },
-    "7.60": {
-      datSignature: 0x00000000,
-      sprSignature: 0x00000000,
-      hasExtended: false,
-      hasFrameGroups: false,
-    },
-    "8.60": {
-      datSignature: 0x00000000,
-      sprSignature: 0x00000000,
-      hasExtended: true,
-      hasFrameGroups: false,
-    },
-    "9.86": {
-      datSignature: 0x00000000,
-      sprSignature: 0x00000000,
-      hasExtended: true,
-      hasFrameGroups: false,
-    },
-    "10.98": {
-      datSignature: 0x00000000,
-      sprSignature: 0x00000000,
-      hasExtended: true,
-      hasFrameGroups: true,
-    },
-    "12.86": {
-      datSignature: 0x00000000,
-      sprSignature: 0x00000000,
-      hasExtended: true,
-      hasFrameGroups: true,
-    },
-  };
-
   // Current project state
-  const projectState = reactive({
+  const projectState = reactive<ProjectData>({
     protocol: "12.86",
-    datFile: null as DatFileData | null,
-    sprFile: null as SprFileData | null,
-    items: [] as TibiaObject[],
-    outfits: [] as TibiaObject[],
-    effects: [] as TibiaObject[],
-    missiles: [] as TibiaObject[],
-    sprites: [] as TibiaSprite[],
+    clientVersion: 1286,
+    datFile: null,
+    sprFile: null,
+    otfiMetadata: null,
     isLoaded: false,
     loadedFiles: {
       dat: false,
@@ -103,260 +42,152 @@ export const useTibiaFiles = () => {
   });
 
   /**
-   * Parse .DAT file
+   * Load project files with real parsing
    */
-  const parseDatFile = async (file: File): Promise<DatFileData> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        try {
-          const buffer = e.target?.result as ArrayBuffer;
-          const dataView = new DataView(buffer);
-
-          // Read DAT header
-          const signature = dataView.getUint32(0, true);
-          const itemCount = dataView.getUint16(4, true);
-          const outfitCount = dataView.getUint16(6, true);
-          const effectCount = dataView.getUint16(8, true);
-          const missileCount = dataView.getUint16(10, true);
-
-          console.log("DAT File Info:", {
-            signature: signature.toString(16),
-            itemCount,
-            outfitCount,
-            effectCount,
-            missileCount,
-          });
-
-          // Create placeholder objects (in real implementation, this would parse the actual data)
-          const items: TibiaObject[] = Array.from(
-            { length: itemCount },
-            (_, i) => ({
-              id: i + 100,
-              name: `Item ${i + 100}`,
-              width: 1,
-              height: 1,
-              layers: 1,
-              patternX: 1,
-              patternY: 1,
-              patternZ: 1,
-              frames: 1,
-              spriteIds: [],
-              properties: {},
-            })
-          );
-
-          const outfits: TibiaObject[] = Array.from(
-            { length: outfitCount },
-            (_, i) => ({
-              id: i + 1068,
-              name: i % 5 === 0 ? `Object ${i + 1068}` : undefined,
-              width: 1,
-              height: 1,
-              layers: 1,
-              patternX: 1,
-              patternY: 1,
-              patternZ: 1,
-              frames: 6,
-              spriteIds: [],
-              properties: {},
-            })
-          );
-
-          const effects: TibiaObject[] = Array.from(
-            { length: effectCount },
-            (_, i) => ({
-              id: i + 1,
-              name: `Effect ${i + 1}`,
-              width: 1,
-              height: 1,
-              layers: 1,
-              patternX: 1,
-              patternY: 1,
-              patternZ: 1,
-              frames: 1,
-              spriteIds: [],
-              properties: {},
-            })
-          );
-
-          const missiles: TibiaObject[] = Array.from(
-            { length: missileCount },
-            (_, i) => ({
-              id: i + 1,
-              name: `Missile ${i + 1}`,
-              width: 1,
-              height: 1,
-              layers: 1,
-              patternX: 1,
-              patternY: 1,
-              patternZ: 1,
-              frames: 1,
-              spriteIds: [],
-              properties: {},
-            })
-          );
-
-          const result: DatFileData = {
-            signature,
-            itemCount,
-            outfitCount,
-            effectCount,
-            missileCount,
-            items,
-            outfits,
-            effects,
-            missiles,
-          };
-
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      reader.onerror = () => reject(new Error("Failed to read DAT file"));
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  /**
-   * Parse .SPR file
-   */
-  const parseSprFile = async (file: File): Promise<SprFileData> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        try {
-          const buffer = e.target?.result as ArrayBuffer;
-          const dataView = new DataView(buffer);
-
-          // Read SPR header
-          const signature = dataView.getUint32(0, true);
-          const spriteCount = dataView.getUint32(4, true);
-
-          console.log("SPR File Info:", {
-            signature: signature.toString(16),
-            spriteCount,
-          });
-
-          const sprites: TibiaSprite[] = [];
-          let offset = 8;
-
-          // Read sprite offsets
-          const spriteOffsets: number[] = [];
-          for (let i = 0; i < spriteCount; i++) {
-            spriteOffsets.push(dataView.getUint32(offset, true));
-            offset += 4;
-          }
-
-          // Create placeholder sprites (in real implementation, this would parse actual sprite data)
-          for (let i = 0; i < Math.min(spriteCount, 50); i++) {
-            sprites.push({
-              id: 201529 + i,
-              width: 32,
-              height: 32,
-              xOffset: 0,
-              yOffset: 0,
-              hasTransparency: true,
-              isCompressed: false,
-              data: null,
-            });
-          }
-
-          console.log(`Loaded ${spriteOffsets.length} sprite offsets`);
-
-          const result: SprFileData = {
-            signature,
-            spriteCount,
-            sprites,
-            spriteOffsets,
-          };
-
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      reader.onerror = () => reject(new Error("Failed to read SPR file"));
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  /**
-   * Parse .OTFI file
-   */
-  const parseOtfiFile = async (file: File): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        try {
-          const buffer = e.target?.result as ArrayBuffer;
-
-          // OTFI is typically a JSON-based format
-          const text = new TextDecoder().decode(buffer);
-          const otfiData = JSON.parse(text);
-
-          console.log("OTFI File loaded:", otfiData);
-
-          resolve(otfiData);
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      reader.onerror = () => reject(new Error("Failed to read OTFI file"));
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  /**
-   * Load project files
-   */
-  const loadProject = async (files: {
-    dat?: File;
-    spr?: File;
-    otfi?: File;
-  }) => {
+  const loadProject = async (files: LoadFileOptions) => {
     try {
       projectState.isLoaded = false;
       projectState.loadedFiles = { dat: false, spr: false, otfi: false };
 
-      if (files.dat) {
-        const datData = await parseDatFile(files.dat);
-        projectState.datFile = datData;
-        projectState.items = datData.items;
-        projectState.outfits = datData.outfits;
-        projectState.effects = datData.effects;
-        projectState.missiles = datData.missiles;
-        projectState.loadedFiles.dat = true;
-      }
+      // Determine protocol version
+      let protocol = PROTOCOL_VERSIONS[projectState.protocol];
 
-      if (files.spr) {
-        const sprData = await parseSprFile(files.spr);
-        projectState.sprFile = sprData;
-        projectState.sprites = sprData.sprites;
-        projectState.loadedFiles.spr = true;
-      }
-
+      // Load OTFI first to get metadata
       if (files.otfi) {
-        const otfiData = await parseOtfiFile(files.otfi);
-        // Merge OTFI data with existing project
-        console.log("OTFI data loaded:", otfiData);
-        projectState.loadedFiles.otfi = true;
+        try {
+          const otfiData = await parseOtfiFile(files.otfi);
+          projectState.otfiMetadata = otfiData;
+          projectState.loadedFiles.otfi = true;
+
+          // Update protocol based on OTFI metadata
+          if (otfiData.clientVersion) {
+            protocol = getProtocolForClientVersion(otfiData.clientVersion);
+            projectState.protocol = protocol.version;
+            projectState.clientVersion = otfiData.clientVersion;
+          }
+
+          console.log("OTFI metadata loaded:", otfiData);
+        } catch (error) {
+          console.error("Error loading OTFI file:", error);
+          throw error;
+        }
+      }
+
+      // Load DAT file
+      if (files.dat) {
+        try {
+          const datData = await parseDatFile(files.dat, protocol);
+          projectState.datFile = datData;
+          projectState.loadedFiles.dat = true;
+
+          console.log(
+            `Loaded DAT file: ${datData.items.length} items, ${datData.outfits.length} outfits, ${datData.effects.length} effects, ${datData.missiles.length} missiles`
+          );
+        } catch (error) {
+          console.error("Error loading DAT file:", error);
+          throw error;
+        }
+      }
+
+      // Load SPR file
+      if (files.spr) {
+        try {
+          const sprData = await parseSprFile(files.spr);
+          projectState.sprFile = sprData;
+          projectState.loadedFiles.spr = true;
+
+          console.log(`Loaded SPR file: ${sprData.sprites.length} sprites`);
+        } catch (error) {
+          console.error("Error loading SPR file:", error);
+          throw error;
+        }
       }
 
       projectState.isLoaded =
         projectState.loadedFiles.dat || projectState.loadedFiles.spr;
-      console.log("Project loaded successfully");
+
+      console.log("Project loaded successfully:", {
+        protocol: projectState.protocol,
+        clientVersion: projectState.clientVersion,
+        loadedFiles: projectState.loadedFiles,
+      });
     } catch (error) {
       console.error("Error loading project:", error);
       throw error;
     }
+  };
+
+  /**
+   * Get all items from the loaded DAT file
+   */
+  const getItems = computed(() => {
+    return projectState.datFile?.items || [];
+  });
+
+  /**
+   * Get all outfits from the loaded DAT file
+   */
+  const getOutfits = computed(() => {
+    return projectState.datFile?.outfits || [];
+  });
+
+  /**
+   * Get all effects from the loaded DAT file
+   */
+  const getEffects = computed(() => {
+    return projectState.datFile?.effects || [];
+  });
+
+  /**
+   * Get all missiles from the loaded DAT file
+   */
+  const getMissiles = computed(() => {
+    return projectState.datFile?.missiles || [];
+  });
+
+  /**
+   * Get all sprites from the loaded SPR file
+   */
+  const getSprites = computed(() => {
+    return projectState.sprFile?.sprites || [];
+  });
+
+  /**
+   * Get thing by category and ID
+   */
+  const getThing = (category: ThingCategory, id: number): ThingType | null => {
+    switch (category) {
+      case ThingCategory.ITEM:
+        return (
+          projectState.datFile?.items.find((item) => item.id === id) || null
+        );
+      case ThingCategory.OUTFIT:
+        return (
+          projectState.datFile?.outfits.find((outfit) => outfit.id === id) ||
+          null
+        );
+      case ThingCategory.EFFECT:
+        return (
+          projectState.datFile?.effects.find((effect) => effect.id === id) ||
+          null
+        );
+      case ThingCategory.MISSILE:
+        return (
+          projectState.datFile?.missiles.find((missile) => missile.id === id) ||
+          null
+        );
+      default:
+        return null;
+    }
+  };
+
+  /**
+   * Get sprite by ID
+   */
+  const getSprite = (id: number): TibiaSprite | null => {
+    return (
+      projectState.sprFile?.sprites.find((sprite) => sprite.id === id) || null
+    );
   };
 
   /**
@@ -557,7 +388,7 @@ export const useTibiaFiles = () => {
         Array.from(files).map((f) => f.name)
       );
 
-      const filesToLoad: { dat?: File; spr?: File; otfi?: File } = {};
+      const filesToLoad: LoadFileOptions = {};
 
       Array.from(files).forEach((file) => {
         const extension = file.name.toLowerCase().split(".").pop();
@@ -573,7 +404,10 @@ export const useTibiaFiles = () => {
       console.log("📂 Files to load:", filesToLoad);
 
       if (Object.keys(filesToLoad).length === 0) {
-        throw new Error("No valid .dat, .spr, or .otfi files selected");
+        throw new TibiaFileError(
+          "No valid .dat, .spr, or .otfi files selected",
+          "dat"
+        );
       }
 
       await loadProject(filesToLoad);
@@ -587,9 +421,9 @@ export const useTibiaFiles = () => {
   /**
    * Export project files
    */
-  const exportProject = async (format: "dat" | "spr" | "otfi" | "all") => {
+  const exportProject = async (options: ExportOptions) => {
     // TODO: Implement export functionality
-    console.log(`Exporting project as ${format}`);
+    console.log(`Exporting project as ${options.format}`);
   };
 
   /**
@@ -597,11 +431,7 @@ export const useTibiaFiles = () => {
    */
   const generateSpriteSheet = (
     sprites: TibiaSprite[],
-    options: {
-      columns: number;
-      spriteSize: number;
-      padding: number;
-    }
+    options: SpriteSheetOptions
   ) => {
     const { columns, spriteSize, padding } = options;
     const rows = Math.ceil(sprites.length / columns);
@@ -631,12 +461,7 @@ export const useTibiaFiles = () => {
    */
   const importSpriteSheet = async (
     file: File,
-    options: {
-      spriteWidth: number;
-      spriteHeight: number;
-      columns: number;
-      rows: number;
-    }
+    options: ImportSpriteSheetOptions
   ) => {
     return new Promise<TibiaSprite[]>((resolve) => {
       const reader = new FileReader();
@@ -666,12 +491,22 @@ export const useTibiaFiles = () => {
                 spriteHeight
               );
 
+              const imageData = ctx.getImageData(
+                0,
+                0,
+                spriteWidth,
+                spriteHeight
+              );
+
               sprites.push({
-                id: projectState.sprites.length + sprites.length + 1,
+                id: getSprites.value.length + sprites.length + 1,
                 width: spriteWidth,
                 height: spriteHeight,
-                data: canvas.toDataURL(),
-                canvas,
+                transparent: true,
+                compressedPixels: new Uint8Array(0),
+                pixelData: new Uint8Array(imageData.data),
+                bitmapData: imageData,
+                isEmpty: false,
               });
             }
           }
@@ -686,15 +521,26 @@ export const useTibiaFiles = () => {
   };
 
   return {
-    protocols,
+    // Protocol and version info
+    protocols: PROTOCOL_VERSIONS,
     projectState: readonly(projectState),
-    parseDatFile,
-    parseSprFile,
-    parseOtfiFile,
+
+    // File operations
     loadProject,
     loadFromFileDialog,
     openFileDialog,
     exportProject,
+
+    // Data getters
+    getItems,
+    getOutfits,
+    getEffects,
+    getMissiles,
+    getSprites,
+    getThing,
+    getSprite,
+
+    // Utility operations
     generateSpriteSheet,
     importSpriteSheet,
   };

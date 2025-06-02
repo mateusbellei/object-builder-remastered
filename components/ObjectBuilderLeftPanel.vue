@@ -1,185 +1,243 @@
 <template>
-  <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-    <!-- Info Section -->
-    <div class="p-4 border-b border-gray-700">
-      <h3 class="text-sm font-semibold text-gray-300 mb-3">Project Info</h3>
-      <div v-if="projectState.isLoaded" class="space-y-2 text-xs">
-        <div class="flex justify-between">
-          <span class="text-gray-400">Version:</span>
-          <span>{{ projectState.protocol }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Sprite Dimension:</span>
-          <span>32x32</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Dat:</span>
-          <span>{{
-            projectState.datFile?.signature?.toString(16) || "Not loaded"
-          }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Items:</span>
-          <span>{{ projectState.items.length }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Outfits:</span>
-          <span>{{ projectState.outfits.length }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Effects:</span>
-          <span>{{ projectState.effects.length }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Missiles:</span>
-          <span>{{ projectState.missiles.length }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Spr:</span>
-          <span>{{ projectState.sprites.length }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Extended:</span>
-          <span>{{
-            protocols[projectState.protocol]?.hasExtended ? "Yes" : "No"
-          }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Transparency:</span>
-          <span>Yes</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Frame Groups:</span>
-          <span>{{
-            protocols[projectState.protocol]?.hasFrameGroups ? "Yes" : "No"
-          }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-400">Improv. Anim.:</span>
-          <span>Yes</span>
-        </div>
-      </div>
-      <div v-else class="text-xs text-gray-500 text-center py-4">
-        No project loaded. Click "Open" to load .dat/.spr files.
-      </div>
-    </div>
-
-    <!-- Object Type Selector -->
-    <div class="p-4 border-b border-gray-700">
-      <USelect
-        v-model="selectedObjectType"
-        :options="objectTypes"
-        size="sm"
-        class="w-full"
-        :disabled="!projectState.isLoaded"
-      />
-    </div>
-
-    <!-- Object List -->
-    <div class="flex-1 overflow-hidden">
-      <div class="p-4">
-        <h3 class="text-sm font-semibold text-gray-300 mb-3">
-          {{ selectedObjectType.label }}
-        </h3>
-        <div
-          v-if="currentObjectList.length > 0"
-          class="space-y-1 max-h-96 overflow-y-auto"
-        >
-          <div
-            v-for="item in currentObjectList"
-            :key="item.id"
-            @click="selectObject(item)"
-            :class="[
-              'flex items-center space-x-3 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors',
-              selectedObject?.id === item.id ? 'bg-blue-600' : '',
-            ]"
+  <div class="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
+    <!-- Project Info -->
+    <div class="border-b border-gray-200 p-4">
+      <h3 class="font-semibold text-gray-900 mb-2">Project Info</h3>
+      <div class="space-y-1 text-sm text-gray-600">
+        <div>Protocol: {{ projectState.protocol }}</div>
+        <div>Client Version: {{ projectState.clientVersion }}</div>
+        <div class="flex space-x-2">
+          <span
+            class="px-2 py-1 rounded text-xs"
+            :class="
+              projectState.loadedFiles.dat
+                ? 'bg-green-100 text-green-800'
+                : 'bg-gray-100 text-gray-600'
+            "
           >
+            DAT {{ projectState.loadedFiles.dat ? "✓" : "✗" }}
+          </span>
+          <span
+            class="px-2 py-1 rounded text-xs"
+            :class="
+              projectState.loadedFiles.spr
+                ? 'bg-green-100 text-green-800'
+                : 'bg-gray-100 text-gray-600'
+            "
+          >
+            SPR {{ projectState.loadedFiles.spr ? "✓" : "✗" }}
+          </span>
+          <span
+            class="px-2 py-1 rounded text-xs"
+            :class="
+              projectState.loadedFiles.otfi
+                ? 'bg-blue-100 text-blue-800'
+                : 'bg-gray-100 text-gray-600'
+            "
+          >
+            OTFI {{ projectState.loadedFiles.otfi ? "✓" : "✗" }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Object Browser -->
+    <div class="flex-1 flex flex-col">
+      <div class="border-b border-gray-200 p-4">
+        <h3 class="font-semibold text-gray-900 mb-2">Object Browser</h3>
+
+        <!-- Category Tabs -->
+        <div class="flex space-x-1 mb-2">
+          <button
+            v-for="category in categories"
+            :key="category.key"
+            @click="selectedCategory = category.key"
+            class="px-3 py-1 text-xs rounded-md"
+            :class="
+              selectedCategory === category.key
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            "
+          >
+            {{ category.label }} ({{ category.count }})
+          </button>
+        </div>
+
+        <!-- Search -->
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search objects..."
+          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+        />
+      </div>
+
+      <!-- Object List -->
+      <div class="flex-1 overflow-y-auto p-2">
+        <div class="space-y-1">
+          <div
+            v-for="object in filteredObjects"
+            :key="`${selectedCategory}-${object.id}`"
+            @click="selectObject(object)"
+            class="flex items-center p-2 rounded-lg cursor-pointer hover:bg-gray-100"
+            :class="
+              selectedObject?.id === object.id &&
+              selectedObjectCategory === selectedCategory
+                ? 'bg-blue-100 border border-blue-300'
+                : ''
+            "
+          >
+            <!-- Object Preview (placeholder) -->
             <div
-              class="w-8 h-8 bg-gray-600 rounded flex items-center justify-center"
+              class="w-8 h-8 bg-gray-200 rounded border mr-3 flex items-center justify-center"
             >
-              <span class="text-xs">{{ item.id }}</span>
+              <span class="text-xs text-gray-500">{{ object.id }}</span>
             </div>
+
+            <!-- Object Info -->
             <div class="flex-1 min-w-0">
-              <div class="text-sm">{{ item.id }}</div>
-              <div class="text-xs text-gray-400 truncate">
-                {{ item.name || "Unnamed" }}
+              <div class="text-sm font-medium text-gray-900 truncate">
+                ID {{ object.id }}
+              </div>
+              <div class="text-xs text-gray-500 truncate">
+                {{ getObjectDescription(object) }}
               </div>
             </div>
           </div>
-        </div>
-        <div v-else class="text-xs text-gray-500 text-center py-8">
-          <Icon
-            name="heroicons:folder-open"
-            class="w-8 h-8 mx-auto mb-2 opacity-50"
-          />
-          <p>
-            {{
-              projectState.isLoaded
-                ? "No objects found"
-                : "Load a project to see objects"
-            }}
-          </p>
+
+          <!-- Empty State -->
+          <div
+            v-if="filteredObjects.length === 0"
+            class="text-center py-8 text-gray-500"
+          >
+            <div class="text-sm">No objects found</div>
+            <div class="text-xs mt-1">
+              {{
+                !projectState.isLoaded
+                  ? "Load a project to see objects"
+                  : "Try adjusting your search"
+              }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </template>
 
-<script setup>
-const { projectState, protocols } = useTibiaFiles();
+<script setup lang="ts">
+import type { ThingType, ThingCategory } from "~/types/tibia";
+import { ThingCategory as TC } from "~/types/tibia";
 
-const selectedObjectType = ref({ label: "Outfit", value: "outfit" });
-const selectedObject = ref(null);
+const { projectState, getItems, getOutfits, getEffects, getMissiles } =
+  useTibiaFiles();
 
-const objectTypes = [
-  { label: "Outfit", value: "outfit" },
-  { label: "Item", value: "item" },
-  { label: "Effect", value: "effect" },
-  { label: "Missile", value: "missile" },
-];
+// Component state
+const selectedCategory = ref<ThingCategory>(TC.ITEM);
+const selectedObject = ref<ThingType | null>(null);
+const selectedObjectCategory = ref<ThingCategory>(TC.ITEM);
+const searchQuery = ref("");
 
-// Computed property to get the current object list based on selected type
-const currentObjectList = computed(() => {
-  switch (selectedObjectType.value.value) {
-    case "outfit":
-      return projectState.outfits;
-    case "item":
-      return projectState.items;
-    case "effect":
-      return projectState.effects;
-    case "missile":
-      return projectState.missiles;
+// Categories configuration
+const categories = computed(() => [
+  {
+    key: TC.ITEM,
+    label: "Items",
+    count: getItems.value.length,
+  },
+  {
+    key: TC.OUTFIT,
+    label: "Outfits",
+    count: getOutfits.value.length,
+  },
+  {
+    key: TC.EFFECT,
+    label: "Effects",
+    count: getEffects.value.length,
+  },
+  {
+    key: TC.MISSILE,
+    label: "Missiles",
+    count: getMissiles.value.length,
+  },
+]);
+
+// Get objects for selected category
+const currentObjects = computed(() => {
+  switch (selectedCategory.value) {
+    case TC.ITEM:
+      return getItems.value;
+    case TC.OUTFIT:
+      return getOutfits.value;
+    case TC.EFFECT:
+      return getEffects.value;
+    case TC.MISSILE:
+      return getMissiles.value;
     default:
       return [];
   }
 });
 
-const selectObject = (object) => {
-  selectedObject.value = object;
-
-  // Emit event for main canvas to listen
-  if (process.client) {
-    window.dispatchEvent(
-      new CustomEvent("object-selected", { detail: object })
-    );
+// Filter objects based on search
+const filteredObjects = computed(() => {
+  if (!searchQuery.value) {
+    return currentObjects.value;
   }
 
-  console.log("Selected object:", object);
-};
-
-// Watch for object type changes
-watch(selectedObjectType, (newType) => {
-  selectedObject.value = null; // Clear selection when changing type
-  console.log("Object type changed to:", newType);
+  const query = searchQuery.value.toLowerCase();
+  return currentObjects.value.filter((object) => {
+    const idMatch = object.id.toString().includes(query);
+    const description = getObjectDescription(object).toLowerCase();
+    return idMatch || description.includes(query);
+  });
 });
 
-// Watch for project changes to reset selection
-watch(
-  () => projectState.isLoaded,
-  (isLoaded) => {
-    if (!isLoaded) {
-      selectedObject.value = null;
+// Get object description
+const getObjectDescription = (object: ThingType): string => {
+  const parts: string[] = [];
+
+  // Add property-based descriptions
+  if (object.stackable) parts.push("Stackable");
+  if (object.isContainer) parts.push("Container");
+  if (object.writable) parts.push("Writable");
+  if (object.isFluid) parts.push("Fluid");
+  if (object.hasLight) parts.push(`Light ${object.lightLevel}`);
+  if (object.isMarketItem) parts.push(object.marketName || "Market Item");
+
+  // Add frame group info
+  if (object.frameGroups.length > 0) {
+    const frameGroup = object.frameGroups[0];
+    if (frameGroup.frames > 1) {
+      parts.push(`${frameGroup.frames} frames`);
+    }
+    if (frameGroup.patternX > 1 || frameGroup.patternY > 1) {
+      parts.push(`${frameGroup.patternX}x${frameGroup.patternY} patterns`);
     }
   }
-);
+
+  return parts.length > 0 ? parts.join(", ") : "Basic object";
+};
+
+// Select object
+const selectObject = (object: ThingType) => {
+  selectedObject.value = object;
+  selectedObjectCategory.value = selectedCategory.value;
+
+  console.log("Selected object:", {
+    id: object.id,
+    category: selectedCategory.value,
+    properties: {
+      stackable: object.stackable,
+      container: object.isContainer,
+      writable: object.writable,
+      frameGroups: object.frameGroups.length,
+    },
+  });
+};
+
+// Watch for category changes
+watch(selectedCategory, () => {
+  selectedObject.value = null;
+  searchQuery.value = "";
+});
 </script>
