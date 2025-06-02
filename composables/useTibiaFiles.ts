@@ -80,6 +80,16 @@ export const useTibiaFiles = () => {
    */
   const loadProject = async (files: LoadFileOptions) => {
     try {
+      // Initialize loading progress
+      loadingProgress.value = {
+        isLoading: true,
+        currentFile: "",
+        progress: 0,
+        datProgress: 0,
+        sprProgress: 0,
+        stage: "Starting...",
+      };
+
       projectState.isLoaded = false;
       projectState.loadedFiles = { dat: false, spr: false, otfi: false };
 
@@ -89,6 +99,9 @@ export const useTibiaFiles = () => {
 
       // Load OTFI first to get metadata
       if (files.otfi) {
+        loadingProgress.value.stage = "Loading OTFI metadata...";
+        loadingProgress.value.progress = 10;
+
         try {
           const otfiData = await parseOtfiFile(files.otfi);
           projectState.otfiMetadata = otfiData;
@@ -103,6 +116,9 @@ export const useTibiaFiles = () => {
 
       // Pre-read signatures to detect protocol
       if (files.dat && files.spr) {
+        loadingProgress.value.stage = "Detecting protocol...";
+        loadingProgress.value.progress = 20;
+
         try {
           // Read DAT signature
           const datBuffer = await files.dat.arrayBuffer();
@@ -140,6 +156,10 @@ export const useTibiaFiles = () => {
 
       // Load DAT file
       if (files.dat) {
+        loadingProgress.value.stage = "Parsing DAT file...";
+        loadingProgress.value.currentFile = files.dat.name;
+        loadingProgress.value.progress = 30;
+
         try {
           const datData = await parseDatFile(
             files.dat,
@@ -147,6 +167,7 @@ export const useTibiaFiles = () => {
           );
           projectState.datFile = datData;
           projectState.loadedFiles.dat = true;
+          loadingProgress.value.datProgress = 100;
 
           console.log(
             `Loaded DAT file: ${datData.items.length} items, ${datData.outfits.length} outfits, ${datData.effects.length} effects, ${datData.missiles.length} missiles`
@@ -159,10 +180,15 @@ export const useTibiaFiles = () => {
 
       // Load SPR file
       if (files.spr) {
+        loadingProgress.value.stage = "Parsing SPR file...";
+        loadingProgress.value.currentFile = files.spr.name;
+        loadingProgress.value.progress = 70;
+
         try {
           const sprData = await parseSprFile(files.spr);
           projectState.sprFile = sprData;
           projectState.loadedFiles.spr = true;
+          loadingProgress.value.sprProgress = 100;
 
           console.log(`Loaded SPR file: ${sprData.sprites.length} sprites`);
         } catch (error) {
@@ -170,6 +196,9 @@ export const useTibiaFiles = () => {
           throw error;
         }
       }
+
+      loadingProgress.value.stage = "Finalizing...";
+      loadingProgress.value.progress = 100;
 
       projectState.isLoaded =
         projectState.loadedFiles.dat || projectState.loadedFiles.spr;
@@ -179,8 +208,14 @@ export const useTibiaFiles = () => {
         clientVersion: projectState.clientVersion,
         loadedFiles: projectState.loadedFiles,
       });
+
+      // Hide loading after a short delay
+      setTimeout(() => {
+        loadingProgress.value.isLoading = false;
+      }, 500);
     } catch (error) {
       console.error("Error loading project:", error);
+      loadingProgress.value.isLoading = false;
       throw error;
     }
   };

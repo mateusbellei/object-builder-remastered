@@ -223,10 +223,19 @@ const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 
-// Watch for protocol changes
+// Watch for protocol changes from project state (when files are loaded)
+watch(
+  () => projectState.protocol,
+  (newProtocol) => {
+    selectedProtocol.value = newProtocol;
+    console.log("Protocol updated from project state:", newProtocol);
+  }
+);
+
+// Watch for manual protocol changes from the select
 watch(selectedProtocol, (newProtocol) => {
-  console.log("Protocol changed to:", newProtocol);
-  // TODO: Implement protocol change if needed
+  console.log("Protocol manually changed to:", newProtocol);
+  // TODO: Implement manual protocol change if needed
 });
 
 const handleProtocolChange = () => {
