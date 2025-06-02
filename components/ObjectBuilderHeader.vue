@@ -19,7 +19,7 @@
         <div class="flex items-center space-x-2">
           <label class="text-sm text-gray-600">Protocol:</label>
           <select
-            v-model="currentProtocol"
+            v-model="selectedProtocol"
             class="px-3 py-1 text-sm border border-gray-300 rounded-md bg-white text-gray-900 min-w-[80px]"
             @change="handleProtocolChange"
           >
@@ -73,7 +73,7 @@
       <!-- Action Buttons -->
       <div class="flex items-center space-x-2">
         <button
-          @click="handleOpen"
+          @click="handleOpenFolder"
           class="flex items-center space-x-2 px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="isLoading"
         >
@@ -148,29 +148,89 @@
         </button>
       </div>
     </div>
+
+    <!-- Loading Progress -->
+    <div
+      v-if="loadingProgress.isLoading"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    >
+      <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+          Loading Tibia Files
+        </h3>
+
+        <!-- Overall Progress -->
+        <div class="mb-4">
+          <div class="flex justify-between text-sm text-gray-600 mb-1">
+            <span>{{ loadingProgress.stage }}</span>
+            <span>{{ loadingProgress.progress }}%</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div
+              class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              :style="{ width: loadingProgress.progress + '%' }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- DAT Progress -->
+        <div class="mb-3">
+          <div class="flex justify-between text-sm text-gray-600 mb-1">
+            <span>DAT File</span>
+            <span>{{ loadingProgress.datProgress }}%</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-1.5">
+            <div
+              class="bg-green-500 h-1.5 rounded-full transition-all duration-300"
+              :style="{ width: loadingProgress.datProgress + '%' }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- SPR Progress -->
+        <div class="mb-4">
+          <div class="flex justify-between text-sm text-gray-600 mb-1">
+            <span>SPR File</span>
+            <span>{{ loadingProgress.sprProgress }}%</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-1.5">
+            <div
+              class="bg-purple-500 h-1.5 rounded-full transition-all duration-300"
+              :style="{ width: loadingProgress.sprProgress + '%' }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Current file info -->
+        <div
+          v-if="loadingProgress.currentFile"
+          class="text-xs text-gray-500 text-center"
+        >
+          Processing: {{ loadingProgress.currentFile }}
+        </div>
+      </div>
+    </div>
   </header>
 </template>
 
 <script setup lang="ts">
-const { projectState, protocols, loadFromFileDialog, exportProject } =
+const { protocols, projectState, loadingProgress, loadFromFileDialog } =
   useTibiaFiles();
 
+// Local refs
+const selectedProtocol = ref(projectState.protocol);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
-const currentProtocol = ref(projectState.protocol);
 
-// Watch for protocol changes in project state
-watch(
-  () => projectState.protocol,
-  (newProtocol) => {
-    currentProtocol.value = newProtocol;
-  }
-);
+// Watch for protocol changes
+watch(selectedProtocol, (newProtocol) => {
+  console.log("Protocol changed to:", newProtocol);
+  // TODO: Implement protocol change if needed
+});
 
 const handleProtocolChange = () => {
-  // TODO: Implement protocol change functionality
-  console.log("Protocol changed to:", currentProtocol.value);
+  console.log("Protocol changed to:", selectedProtocol.value);
 };
 
 const clearError = () => {
@@ -181,24 +241,13 @@ const clearSuccess = () => {
   successMessage.value = "";
 };
 
-const handleOpen = async () => {
-  console.log("🚀 Open button clicked!");
-  if (isLoading.value) return;
-
-  isLoading.value = true;
-  errorMessage.value = "";
-  successMessage.value = "";
-
+const handleOpenFolder = async () => {
   try {
+    console.log("🚀 Open button clicked!");
     await loadFromFileDialog();
-    successMessage.value = "Files loaded successfully!";
     console.log("✅ Files loaded successfully!");
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    errorMessage.value = `Failed to load files: ${message}`;
     console.error("❌ Error loading files:", error);
-  } finally {
-    isLoading.value = false;
   }
 };
 
@@ -208,16 +257,8 @@ const handleSave = () => {
   console.log("Save function not implemented yet");
 };
 
-const handleExport = async () => {
-  console.log("📤 Export button clicked!");
-  try {
-    await exportProject({ format: "all" });
-    successMessage.value = "Project exported successfully!";
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    errorMessage.value = `Failed to export: ${message}`;
-    console.error("❌ Error exporting:", error);
-  }
+const handleExport = () => {
+  console.log("📤 Export clicked - not implemented yet");
 };
 
 const handleHelp = () => {

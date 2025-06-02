@@ -452,11 +452,24 @@ function parseThingType(
       return null;
     }
 
+    // Add detailed logging for non-items to debug the issue
+    if (category !== ThingCategory.ITEM && id <= 3) {
+      console.log(
+        `🔍 Parsing ${category} ${id} - Position: ${reader.currentPosition}, Available bytes: ${reader.bytesAvailable}`
+      );
+    }
+
     // Use protocol-specific parsing
     if (protocol.version === "10.98") {
       parseProperties1098(reader, thing);
     } else {
       parseProperties1286(reader, thing);
+    }
+
+    if (category !== ThingCategory.ITEM && id <= 3) {
+      console.log(
+        `📖 Properties parsed for ${category} ${id}, moving to texture patterns`
+      );
     }
 
     // Now read texture patterns (frame groups)
@@ -906,11 +919,22 @@ function parseTexturePatterns(
   protocol: ProtocolVersion
 ): void {
   try {
+    const shouldLog = thing.category !== ThingCategory.ITEM && thing.id <= 3;
+
+    if (shouldLog) {
+      console.log(
+        `🎨 Starting texture patterns for ${thing.category} ${thing.id} - bytes available: ${reader.bytesAvailable}`
+      );
+    }
+
     // Frame groups (for newer versions that support them)
     let groupCount = 1;
     if (protocol.hasFrameGroups && thing.category === ThingCategory.OUTFIT) {
       if (reader.bytesAvailable >= 1) {
         groupCount = reader.readUint8();
+        if (shouldLog) {
+          console.log(`🎨 Outfit ${thing.id} has ${groupCount} frame groups`);
+        }
       } else {
         console.warn(
           `Not enough bytes to read group count for thing ${thing.id}`

@@ -41,6 +41,24 @@ declare global {
   }
 }
 
+interface LoadingProgress {
+  isLoading: boolean;
+  currentFile: string;
+  progress: number;
+  datProgress: number;
+  sprProgress: number;
+  stage: string;
+}
+
+const loadingProgress = ref<LoadingProgress>({
+  isLoading: false,
+  currentFile: "",
+  progress: 0,
+  datProgress: 0,
+  sprProgress: 0,
+  stage: "",
+});
+
 export const useTibiaFiles = () => {
   // Current project state
   const projectState = reactive<ProjectData>({
@@ -685,10 +703,27 @@ export const useTibiaFiles = () => {
     });
   };
 
+  // Helper functions for progress tracking
+  const parseDatFileWithProgress = async (
+    file: File,
+    protocol: ProtocolVersion
+  ) => {
+    // This would be the same as parseDatFile but with progress callbacks
+    // For now, just call the original function
+    return await parseDatFile(file, protocol);
+  };
+
+  const parseSprFileWithProgress = async (file: File) => {
+    // This would be the same as parseSprFile but with progress callbacks
+    // For now, just call the original function
+    return await parseSprFile(file);
+  };
+
   return {
     // Protocol and version info
     protocols: PROTOCOL_VERSIONS,
     projectState: readonly(projectState),
+    loadingProgress: readonly(loadingProgress),
 
     // File operations
     loadProject,
