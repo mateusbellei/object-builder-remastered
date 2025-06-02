@@ -930,13 +930,17 @@ function parseTexturePatterns(
     // Frame groups (for newer versions that support them)
     let groupCount = 1;
     let originalGroupCount = 1; // Track what was actually read from file
+    let actuallyHasFrameGroups = false;
+
     if (protocol.hasFrameGroups && thing.category === ThingCategory.OUTFIT) {
       if (reader.bytesAvailable >= 1) {
         originalGroupCount = reader.readUint8();
         groupCount = originalGroupCount;
+        actuallyHasFrameGroups = originalGroupCount > 0;
+
         if (shouldLog) {
           console.log(
-            `🎨 Outfit ${thing.id} has ${originalGroupCount} frame groups`
+            `🎨 Outfit ${thing.id} has ${originalGroupCount} frame groups (actually has: ${actuallyHasFrameGroups})`
           );
         }
         // Critical fix: If groupCount is 0, the outfit doesn't have frame groups in the file
@@ -971,11 +975,7 @@ function parseTexturePatterns(
       // For outfits with frame groups, read an extra byte (group type)
       // This happens AFTER reading group count but BEFORE reading dimensions
       // BUT only if the original groupCount was > 0 (outfit has frame groups in file)
-      if (
-        protocol.hasFrameGroups &&
-        thing.category === ThingCategory.OUTFIT &&
-        originalGroupCount > 0
-      ) {
+      if (actuallyHasFrameGroups) {
         const groupType = reader.readUint8(); // This byte indicates the group type
         if (shouldLog) {
           console.log(`🎨 Reading outfit group type: ${groupType}`);
@@ -996,7 +996,7 @@ function parseTexturePatterns(
 
       if (shouldLog) {
         console.log(
-          `🎨 Frame group ${g}: ${frameGroup.width}x${frameGroup.height}`
+          `🎨 Frame group ${g}: ${frameGroup.width}x${frameGroup.height}, bytes remaining: ${reader.bytesAvailable}, position: ${reader.currentPosition}`
         );
       }
 
@@ -1005,7 +1005,9 @@ function parseTexturePatterns(
         if (reader.bytesAvailable >= 1) {
           const exactSize = reader.readUint8();
           if (shouldLog) {
-            console.log(`🎨 Read exactSize: ${exactSize}`);
+            console.log(
+              `🎨 Read exactSize: ${exactSize}, pos: ${reader.currentPosition}, bytes: ${reader.bytesAvailable}`
+            );
           }
         } else {
           console.warn(
@@ -1015,20 +1017,49 @@ function parseTexturePatterns(
       }
 
       // Continue reading the standard fields in exact Object Builder order
-      if (reader.bytesAvailable >= 4) {
+      // MetadataReader6 uses the base class implementation:
+      // layers, patternX, patternY, patternZ (read from file), frames
+      if (reader.bytesAvailable >= 5) {
         frameGroup.layers = reader.readUint8() || 1;
-        frameGroup.patternX = reader.readUint8();
-        frameGroup.patternY = reader.readUint8();
+        if (shouldLog) {
+          console.log(
+            `🎨 Read layers: ${frameGroup.layers}, pos: ${reader.currentPosition}, bytes: ${reader.bytesAvailable}`
+          );
+        }
 
-        // Critical fix: For protocol 10.98, patternZ is read from file!
-        // Only for newer protocols (12.86+) is it hardcoded to 1
-        if (protocol.version === "10.98") {
-          frameGroup.patternZ = reader.readUint8();
-        } else {
-          frameGroup.patternZ = 1; // Hardcoded for newer protocols
+        frameGroup.patternX = reader.readUint8();
+        if (shouldLog) {
+          console.log(
+            `🎨 Read patternX: ${frameGroup.patternX}, pos: ${reader.currentPosition}, bytes: ${reader.bytesAvailable}`
+          );
+        }
+
+        frameGroup.patternY = reader.readUint8();
+        if (shouldLog) {
+          console.log(
+            `🎨 Read patternY: ${frameGroup.patternY}, pos: ${reader.currentPosition}, bytes: ${reader.bytesAvailable}`
+          );
+        }
+
+        frameGroup.patternZ = reader.readUint8(); // Always read from file for MetadataReader6 (protocol 10.98)
+        if (shouldLog) {
+          console.log(
+            `🎨 Read patternZ: ${frameGroup.patternZ}, pos: ${reader.currentPosition}, bytes: ${reader.bytesAvailable}`
+          );
         }
 
         frameGroup.frames = reader.readUint8();
+        if (shouldLog) {
+          console.log(
+            `🎨 Read frames: ${frameGroup.frames}, pos: ${reader.currentPosition}, bytes: ${reader.bytesAvailable}`
+          );
+        }
+
+        if (shouldLog) {
+          console.log(
+            `🎨 Individual fields: layers=${frameGroup.layers}, patternX=${frameGroup.patternX}, patternY=${frameGroup.patternY}, patternZ=${frameGroup.patternZ}, frames=${frameGroup.frames}`
+          );
+        }
       } else {
         console.warn(
           `Not enough bytes to read patterns/frames for thing ${thing.id}`
