@@ -25,6 +25,20 @@ import {
   getProtocolForClientVersion,
 } from "~/utils/tibiaFileParser";
 
+// Type declarations for browser APIs
+declare global {
+  interface Window {
+    electronAPI?: {
+      selectFolder(): Promise<{ cancelled: boolean; folderPath?: string }>;
+      readFolder(folderPath: string): Promise<string[]>;
+      readFile(filePath: string): Promise<File>;
+      selectFile(): Promise<{ cancelled: boolean; filePaths?: string[] }>;
+      selectFiles(): Promise<{ cancelled: boolean; filePaths?: string[] }>;
+    };
+    showDirectoryPicker?(): Promise<any>;
+  }
+}
+
 export const useTibiaFiles = () => {
   // Current project state
   const projectState = reactive<ProjectData>({
@@ -363,59 +377,174 @@ export const useTibiaFiles = () => {
   };
 
   /**
-   * Load files from file dialog
+   * Load project from file dialog
    */
-  const loadFromFileDialog = async () => {
-    console.log("🚀 loadFromFileDialog called!");
-    console.log("🔍 Environment check:", {
-      isClient: process.client,
-      hasWindow: typeof window !== "undefined",
-      hasProcess: typeof window !== "undefined" && !!window.process,
-      processType: typeof window !== "undefined" && window.process?.type,
-      hasElectronAPI:
-        typeof window !== "undefined" && !!(window as any).electronAPI,
-    });
-
+  const loadFromFileDialog = async (): Promise<void> => {
     try {
-      const files = await openFileDialog();
-      if (!files || files.length === 0) {
-        console.log("❌ No files selected");
-        return;
+      let folderHandle: any = null;
+
+      if (
+        process.client &&
+        "showDirectoryPicker" in window &&
+        window.showDirectoryPicker
+      ) {
+        // Use native folder picker on web
+        try {
+          folderHandle = await window.showDirectoryPicker();
+        } catch (error) {
+          console.log("🚫 User cancelled folder selection");
+          return;
+        }
+      } else if (process.client && window.electronAPI) {
+        // Use Electron folder dialog
+        try {
+          const result = await window.electronAPI.selectFolder();
+          if (result.cancelled || !result.folderPath) {
+            console.log("🚫 User cancelled folder selection");
+            return;
+          }
+
+          console.log("📁 Selected folder:", result.folderPath);
+
+          // Find and load files from the selected folder
+          const files = await window.electronAPI.readFolder(result.folderPath);
+          await loadFromFileList(files);
+          return;
+        } catch (error) {
+          console.error("❌ Error selecting folder:", error);
+          throw error;
+        }
       }
 
-      console.log(
-        "✅ Selected files:",
-        Array.from(files).map((f) => f.name)
-      );
+      // Web File System Access API path
+      if (folderHandle) {
+        const files: { [key: string]: File } = {};
 
-      const filesToLoad: LoadFileOptions = {};
-
-      Array.from(files).forEach((file) => {
-        const extension = file.name.toLowerCase().split(".").pop();
+        // Look for .dat, .spr, and .otfi files in the folder
+        try {
+          for await (const [name, handle] of folderHandle.entries()) {
+            if (handle.kind === "file") {
+              const extension = name.toLowerCase().split(".").pop();
+              if (["dat", "spr", "otfi"].includes(extension || "")) {
+                const file = await (handle as any).getFile();
+                files[extension as string] = file;
+              }
+            }
+          }
+          await loadFromFileDict(files);
+        } catch (error) {
+          console.error("❌ Error reading folder:", error);
+          throw error;
+        }
+      } else {
+        // Fallback to individual file selection if folder picker not available
         console.log(
-          `📁 Processing file: ${file.name}, extension: ${extension}`
+          "📂 Folder picker not available, falling back to file selection"
         );
 
-        if (extension === "dat") filesToLoad.dat = file;
-        if (extension === "spr") filesToLoad.spr = file;
-        if (extension === "otfi") filesToLoad.otfi = file;
-      });
+        const input = document.createElement("input");
+        input.type = "file";
+        input.multiple = true;
+        input.accept = ".dat,.spr,.otfi";
 
-      console.log("📂 Files to load:", filesToLoad);
+        return new Promise((resolve, reject) => {
+          input.onchange = async (event) => {
+            try {
+              const files = (event.target as HTMLInputElement).files;
+              if (!files || files.length === 0) {
+                resolve();
+                return;
+              }
 
-      if (Object.keys(filesToLoad).length === 0) {
-        throw new TibiaFileError(
-          "No valid .dat, .spr, or .otfi files selected",
-          "dat"
-        );
+              console.log("📁 Files selected:", files);
+              await loadFromFileList(Array.from(files));
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          };
+
+          input.oncancel = () => resolve();
+          input.click();
+        });
       }
-
-      await loadProject(filesToLoad);
-      console.log("🎉 Project loaded successfully!");
     } catch (error) {
-      console.error("💥 Error in loadFromFileDialog:", error);
+      console.error("❌ Error in loadFromFileDialog:", error);
       throw error;
     }
+  };
+
+  /**
+   * Load from a list of files (either File objects or file paths)
+   */
+  const loadFromFileList = async (files: (File | string)[]): Promise<void> => {
+    const fileDict: { [key: string]: File | string } = {};
+
+    console.log(
+      "✅ Selected files:",
+      files.map((f) =>
+        typeof f === "string" ? f.split(/[/\\]/).pop() : f.name
+      )
+    );
+
+    // Group files by extension
+    for (const file of files) {
+      const fileName =
+        typeof file === "string" ? file.split(/[/\\]/).pop() || "" : file.name;
+      const extension = fileName.toLowerCase().split(".").pop();
+
+      console.log("📁 Processing file:", fileName, "extension:", extension);
+
+      if (extension && ["dat", "spr", "otfi"].includes(extension)) {
+        fileDict[extension] = file;
+      }
+    }
+
+    await loadFromFileDict(fileDict);
+  };
+
+  /**
+   * Load from a dictionary of files by extension
+   */
+  const loadFromFileDict = async (files: {
+    [key: string]: File | string;
+  }): Promise<void> => {
+    console.log("📂 Files to load:", files);
+
+    // Check if we have at least DAT and SPR files
+    if (!files.dat || !files.spr) {
+      const missing = [];
+      if (!files.dat) missing.push("DAT");
+      if (!files.spr) missing.push("SPR");
+      throw new Error(`Missing required files: ${missing.join(", ")}`);
+    }
+
+    // Load files
+    const filesToLoad: LoadFileOptions = {};
+
+    if (files.dat) {
+      filesToLoad.dat =
+        typeof files.dat === "string" && window.electronAPI
+          ? await window.electronAPI.readFile(files.dat)
+          : (files.dat as File);
+    }
+
+    if (files.spr) {
+      filesToLoad.spr =
+        typeof files.spr === "string" && window.electronAPI
+          ? await window.electronAPI.readFile(files.spr)
+          : (files.spr as File);
+    }
+
+    if (files.otfi) {
+      filesToLoad.otfi =
+        typeof files.otfi === "string" && window.electronAPI
+          ? await window.electronAPI.readFile(files.otfi)
+          : (files.otfi as File);
+    }
+
+    await loadProject(filesToLoad);
+    console.log("🎉 Project loaded successfully!");
   };
 
   /**

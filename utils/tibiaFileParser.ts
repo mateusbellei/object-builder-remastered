@@ -51,23 +51,34 @@ class BinaryReader {
     return value;
   }
 
+  readInt16(): number {
+    const value = this.view.getInt16(this.position, true); // little endian
+    this.position += 2;
+    return value;
+  }
+
   readUint32(): number {
     const value = this.view.getUint32(this.position, true); // little endian
     this.position += 4;
     return value;
   }
 
-  readString(): string {
-    const length = this.readUint16();
+  readString(length: number, encoding?: string): string {
     const bytes = new Uint8Array(this.view.buffer, this.position, length);
     this.position += length;
-    return new TextDecoder("utf-8").decode(bytes);
+
+    // Simple UTF-8 decoding for now
+    return new TextDecoder(encoding || "utf-8").decode(bytes);
   }
 
   readBytes(count: number): Uint8Array {
     const bytes = new Uint8Array(this.view.buffer, this.position, count);
     this.position += count;
     return bytes;
+  }
+
+  get bytesAvailable(): number {
+    return this.view.byteLength - this.position;
   }
 
   get currentPosition(): number {
@@ -175,8 +186,16 @@ function parseThingType(
     const thing: ThingType = {
       id,
       category,
-
-      // Initialize all properties with defaults
+      clientId: id,
+      // Basic properties
+      width: 1,
+      height: 1,
+      layers: 1,
+      patternX: 1,
+      patternY: 1,
+      patternZ: 1,
+      frames: 1,
+      // Flags - all default to false/0
       isGround: false,
       groundSpeed: 0,
       isGroundBorder: false,
@@ -186,8 +205,6 @@ function parseThingType(
       stackable: false,
       forceUse: false,
       multiUse: false,
-      usable: false,
-      hasCharges: false,
       writable: false,
       writableOnce: false,
       maxTextLength: 0,
@@ -208,7 +225,6 @@ function parseThingType(
       lightColor: 0,
       dontHide: false,
       isTranslucent: false,
-      floorChange: false,
       hasOffset: false,
       offsetX: 0,
       offsetY: 0,
@@ -236,12 +252,22 @@ function parseThingType(
       wrappable: false,
       unwrappable: false,
       topEffect: false,
-      frameGroups: [],
+      usable: false,
+      // Frame groups
+      frameGroups: {},
+      spriteIds: [],
     };
 
-    // Parse metadata flags
-    let flag = reader.readUint8();
+    // Read properties flags until LAST_FLAG
+    let flag = 0;
     while (flag !== MetadataFlags.LAST_FLAG) {
+      const previousFlag = flag;
+      flag = reader.readUint8();
+
+      if (flag === MetadataFlags.LAST_FLAG) {
+        break;
+      }
+
       switch (flag) {
         case MetadataFlags.GROUND:
           thing.isGround = true;
@@ -350,8 +376,8 @@ function parseThingType(
 
         case MetadataFlags.HAS_OFFSET:
           thing.hasOffset = true;
-          thing.offsetX = reader.readUint16();
-          thing.offsetY = reader.readUint16();
+          thing.offsetX = reader.readInt16();
+          thing.offsetY = reader.readInt16();
           break;
 
         case MetadataFlags.HAS_ELEVATION:
@@ -395,7 +421,8 @@ function parseThingType(
           thing.marketCategory = reader.readUint16();
           thing.marketTradeAs = reader.readUint16();
           thing.marketShowAs = reader.readUint16();
-          thing.marketName = reader.readString();
+          const nameLength = reader.readUint16();
+          thing.marketName = reader.readString(nameLength, "iso-8859-1");
           thing.marketRestrictProfession = reader.readUint16();
           thing.marketRestrictLevel = reader.readUint16();
           break;
@@ -422,31 +449,24 @@ function parseThingType(
           break;
 
         default:
-          console.warn(`Unknown metadata flag: 0x${flag.toString(16)}`);
+          console.warn(
+            `Unknown flag 0x${flag.toString(
+              16
+            )} (previous: 0x${previousFlag.toString(16)}) for ${category} ${id}`
+          );
+          // Don't throw error, just skip unknown flags
           break;
       }
-
-      flag = reader.readUint8();
     }
 
-    // Parse frame groups
-    if (protocol.hasFrameGroups) {
-      const groupCount = reader.readUint8();
-      for (let i = 0; i < groupCount; i++) {
-        const frameGroup = parseFrameGroup(reader);
-        thing.frameGroups.push(frameGroup);
-      }
-    } else {
-      // Single frame group for older protocols
-      const frameGroup = parseFrameGroup(reader);
-      frameGroup.type = FrameGroupType.DEFAULT;
-      thing.frameGroups.push(frameGroup);
-    }
+    // Now read texture patterns (frame groups)
+    parseTexturePatterns(reader, thing);
 
     return thing;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error(`Error parsing thing ${id}:`, error);
-    return null;
+    throw new Error(`Failed to parse thing ${id}: ${message}`);
   }
 }
 
@@ -785,4 +805,77 @@ export function getProtocolForClientVersion(
 
   // Default to latest version
   return PROTOCOL_VERSIONS["12.86"];
+}
+
+function parseTexturePatterns(reader: BinaryReader, thing: ThingType): void {
+  try {
+    // Frame groups (for newer versions that support them)
+    let groupCount = 1;
+    if (thing.category === ThingCategory.OUTFIT) {
+      // Outfits can have multiple frame groups
+      groupCount = reader.readUint8();
+    }
+
+    for (let g = 0; g < groupCount; g++) {
+      const frameGroup: FrameGroup = {
+        type: g === 0 ? FrameGroupType.DEFAULT : FrameGroupType.WALKING,
+        width: reader.readUint8(),
+        height: reader.readUint8(),
+        layers: reader.readUint8() || 1,
+        patternX: reader.readUint8(),
+        patternY: reader.readUint8(),
+        patternZ: reader.readUint8(),
+        frames: reader.readUint8(),
+        spriteIds: [],
+      };
+
+      // Update thing dimensions from first frame group
+      if (g === 0) {
+        thing.width = frameGroup.width;
+        thing.height = frameGroup.height;
+        thing.layers = frameGroup.layers;
+        thing.patternX = frameGroup.patternX;
+        thing.patternY = frameGroup.patternY;
+        thing.patternZ = frameGroup.patternZ;
+        thing.frames = frameGroup.frames;
+      }
+
+      // Calculate total sprites needed
+      const totalSprites =
+        frameGroup.width *
+        frameGroup.height *
+        frameGroup.layers *
+        frameGroup.patternX *
+        frameGroup.patternY *
+        frameGroup.patternZ *
+        frameGroup.frames;
+
+      // Read sprite IDs
+      for (let i = 0; i < totalSprites; i++) {
+        const spriteId = reader.readUint32();
+        frameGroup.spriteIds.push(spriteId);
+        thing.spriteIds.push(spriteId);
+      }
+
+      // Store frame group
+      thing.frameGroups[frameGroup.type] = frameGroup;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Error parsing texture patterns for thing ${thing.id}: ${message}`
+    );
+    // Set defaults if parsing fails
+    thing.frameGroups[FrameGroupType.DEFAULT] = {
+      type: FrameGroupType.DEFAULT,
+      width: 1,
+      height: 1,
+      layers: 1,
+      patternX: 1,
+      patternY: 1,
+      patternZ: 1,
+      frames: 1,
+      spriteIds: [],
+    };
+  }
 }

@@ -119,18 +119,19 @@ export interface FrameGroup {
   type: FrameGroupType;
   width: number;
   height: number;
-  exactSize: number;
+  exactSize?: number;
   layers: number;
   patternX: number;
   patternY: number;
   patternZ: number;
   frames: number;
-  spriteIndex: number[];
-  isAnimation: boolean;
-  animationMode: AnimationMode;
-  loopCount: number;
-  startFrame: number;
-  frameDurations: FrameDuration[] | null;
+  spriteIndex?: number[];
+  spriteIds: number[];
+  isAnimation?: boolean;
+  animationMode?: AnimationMode;
+  loopCount?: number;
+  startFrame?: number;
+  frameDurations?: FrameDuration[] | null;
 }
 
 export interface TibiaSprite {
@@ -155,6 +156,15 @@ export interface ThingTypeProperties {
   id: number;
   category: ThingCategory;
 
+  // Dimensions (added for compatibility)
+  width?: number;
+  height?: number;
+  layers?: number;
+  patternX?: number;
+  patternY?: number;
+  patternZ?: number;
+  frames?: number;
+
   // Ground properties
   isGround: boolean;
   groundSpeed: number;
@@ -176,7 +186,7 @@ export interface ThingTypeProperties {
   usable: boolean;
 
   // Charges
-  hasCharges: boolean;
+  hasCharges?: boolean;
 
   // Writable properties
   writable: boolean;
@@ -199,6 +209,8 @@ export interface ThingTypeProperties {
 
   // Hanging properties
   hangable: boolean;
+
+  // Orientation properties
   isVertical: boolean;
   isHorizontal: boolean;
   rotatable: boolean;
@@ -213,7 +225,7 @@ export interface ThingTypeProperties {
   isTranslucent: boolean;
 
   // Floor properties
-  floorChange: boolean;
+  floorChange?: boolean;
 
   // Offset properties
   hasOffset: boolean;
@@ -246,12 +258,12 @@ export interface ThingTypeProperties {
 
   // Cloth properties
   cloth: boolean;
-  clothSlot: ClothSlot;
+  clothSlot: number;
 
   // Market properties
   isMarketItem: boolean;
   marketName: string;
-  marketCategory: MarketCategory;
+  marketCategory: number;
   marketTradeAs: number;
   marketShowAs: number;
   marketRestrictProfession: number;
@@ -270,7 +282,8 @@ export interface ThingTypeProperties {
 }
 
 export interface ThingType extends ThingTypeProperties {
-  frameGroups: FrameGroup[];
+  frameGroups: Record<FrameGroupType, FrameGroup>;
+  spriteIds: number[];
 }
 
 export interface SpriteData {

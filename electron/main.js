@@ -64,6 +64,109 @@ ipcMain.handle("show-save-dialog", async (event, options) => {
   return result;
 });
 
+// IPC Handlers
+ipcMain.handle("select-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [
+      { name: "Tibia Files", extensions: ["dat", "spr", "otfi"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+
+  return {
+    cancelled: result.canceled,
+    filePaths: result.filePaths,
+  };
+});
+
+ipcMain.handle("select-files", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      { name: "Tibia Files", extensions: ["dat", "spr", "otfi"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+
+  return {
+    cancelled: result.canceled,
+    filePaths: result.filePaths,
+  };
+});
+
+ipcMain.handle("select-folder", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+  });
+
+  return {
+    cancelled: result.canceled,
+    folderPath:
+      result.filePaths && result.filePaths.length > 0
+        ? result.filePaths[0]
+        : null,
+  };
+});
+
+ipcMain.handle("read-folder", async (event, folderPath) => {
+  try {
+    const fs = require("fs").promises;
+    const path = require("path");
+
+    const files = await fs.readdir(folderPath);
+    const tibiaFiles = [];
+
+    for (const file of files) {
+      const ext = path.extname(file).toLowerCase();
+      if ([".dat", ".spr", ".otfi"].includes(ext)) {
+        tibiaFiles.push(path.join(folderPath, file));
+      }
+    }
+
+    return tibiaFiles;
+  } catch (error) {
+    console.error("Error reading folder:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("read-file", async (event, filePath) => {
+  try {
+    const fs = require("fs").promises;
+    const path = require("path");
+
+    const buffer = await fs.readFile(filePath);
+    const fileName = path.basename(filePath);
+
+    // Convert buffer to File-like object
+    return {
+      name: fileName,
+      size: buffer.length,
+      type: "",
+      lastModified: Date.now(),
+      arrayBuffer: () =>
+        Promise.resolve(
+          buffer.buffer.slice(
+            buffer.byteOffset,
+            buffer.byteOffset + buffer.byteLength
+          )
+        ),
+      text: () => Promise.resolve(buffer.toString()),
+      stream: () => {
+        throw new Error("Stream not supported in Electron");
+      },
+      slice: (start, end) => {
+        const sliced = buffer.slice(start, end);
+        return new Blob([sliced]);
+      },
+    };
+  } catch (error) {
+    console.error("Error reading file:", error);
+    throw error;
+  }
+});
+
 app.whenReady().then(() => {
   createWindow();
 });
