@@ -20,12 +20,14 @@
           <label class="text-sm text-gray-600">Protocol:</label>
           <select
             v-model="currentProtocol"
-            class="px-3 py-1 text-sm border border-gray-300 rounded-md bg-white"
+            class="px-3 py-1 text-sm border border-gray-300 rounded-md bg-white text-gray-900 min-w-[80px]"
+            @change="handleProtocolChange"
           >
             <option
               v-for="(protocol, key) in protocols"
               :key="key"
               :value="key"
+              class="text-gray-900"
             >
               {{ key }}
             </option>
@@ -72,12 +74,12 @@
       <div class="flex items-center space-x-2">
         <button
           @click="handleOpen"
-          class="flex items-center space-x-2 px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+          class="flex items-center space-x-2 px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="isLoading"
         >
           <span class="text-sm">📁</span>
           <span class="text-sm font-medium">{{
-            isLoading ? "Loading..." : "Open"
+            isLoading ? "Loading..." : "Open Folder"
           }}</span>
         </button>
 
@@ -85,7 +87,7 @@
 
         <button
           @click="handleSave"
-          class="flex items-center space-x-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+          class="flex items-center space-x-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="!projectState.isLoaded || isLoading"
         >
           <span class="text-sm">💾</span>
@@ -94,7 +96,7 @@
 
         <button
           @click="handleExport"
-          class="flex items-center space-x-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+          class="flex items-center space-x-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="!projectState.isLoaded || isLoading"
         >
           <span class="text-sm">📤</span>
@@ -112,6 +114,40 @@
         </button>
       </div>
     </div>
+
+    <!-- Error Display -->
+    <div
+      v-if="errorMessage"
+      class="mt-3 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md"
+    >
+      <div class="flex items-center">
+        <span class="text-red-500 mr-2">⚠️</span>
+        <span class="text-sm">{{ errorMessage }}</span>
+        <button
+          @click="clearError"
+          class="ml-auto text-red-500 hover:text-red-700"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- Success Display -->
+    <div
+      v-if="successMessage"
+      class="mt-3 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md"
+    >
+      <div class="flex items-center">
+        <span class="text-green-500 mr-2">✅</span>
+        <span class="text-sm">{{ successMessage }}</span>
+        <button
+          @click="clearSuccess"
+          class="ml-auto text-green-500 hover:text-green-700"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
   </header>
 </template>
 
@@ -120,20 +156,46 @@ const { projectState, protocols, loadFromFileDialog, exportProject } =
   useTibiaFiles();
 
 const isLoading = ref(false);
+const errorMessage = ref("");
+const successMessage = ref("");
 const currentProtocol = ref(projectState.protocol);
 
-// Note: Protocol is read-only in the current implementation
-// TODO: Add protocol change functionality in the composable
+// Watch for protocol changes in project state
+watch(
+  () => projectState.protocol,
+  (newProtocol) => {
+    currentProtocol.value = newProtocol;
+  }
+);
+
+const handleProtocolChange = () => {
+  // TODO: Implement protocol change functionality
+  console.log("Protocol changed to:", currentProtocol.value);
+};
+
+const clearError = () => {
+  errorMessage.value = "";
+};
+
+const clearSuccess = () => {
+  successMessage.value = "";
+};
 
 const handleOpen = async () => {
   console.log("🚀 Open button clicked!");
   if (isLoading.value) return;
 
   isLoading.value = true;
+  errorMessage.value = "";
+  successMessage.value = "";
+
   try {
     await loadFromFileDialog();
+    successMessage.value = "Files loaded successfully!";
     console.log("✅ Files loaded successfully!");
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errorMessage.value = `Failed to load files: ${message}`;
     console.error("❌ Error loading files:", error);
   } finally {
     isLoading.value = false;
@@ -150,7 +212,10 @@ const handleExport = async () => {
   console.log("📤 Export button clicked!");
   try {
     await exportProject({ format: "all" });
+    successMessage.value = "Project exported successfully!";
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errorMessage.value = `Failed to export: ${message}`;
     console.error("❌ Error exporting:", error);
   }
 };

@@ -126,31 +126,99 @@ export async function parseDatFile(
 
     // Parse items
     const items: ThingType[] = [];
+    let successfulItems = 0;
+    let failedItems = 0;
+
     for (let i = 100; i < 100 + itemCount; i++) {
-      const thing = parseThingType(reader, i, ThingCategory.ITEM, protocol);
-      if (thing) items.push(thing);
+      try {
+        const thing = parseThingType(reader, i, ThingCategory.ITEM, protocol);
+        if (thing) {
+          items.push(thing);
+          successfulItems++;
+        } else {
+          failedItems++;
+        }
+      } catch (error) {
+        console.warn(`Failed to parse item ${i}:`, error);
+        failedItems++;
+        // Continue with next item
+      }
     }
 
     // Parse outfits
     const outfits: ThingType[] = [];
+    let successfulOutfits = 0;
+    let failedOutfits = 0;
+
     for (let i = 1; i <= outfitCount; i++) {
-      const thing = parseThingType(reader, i, ThingCategory.OUTFIT, protocol);
-      if (thing) outfits.push(thing);
+      try {
+        const thing = parseThingType(reader, i, ThingCategory.OUTFIT, protocol);
+        if (thing) {
+          outfits.push(thing);
+          successfulOutfits++;
+        } else {
+          failedOutfits++;
+        }
+      } catch (error) {
+        console.warn(`Failed to parse outfit ${i}:`, error);
+        failedOutfits++;
+        // Continue with next outfit
+      }
     }
 
     // Parse effects
     const effects: ThingType[] = [];
+    let successfulEffects = 0;
+    let failedEffects = 0;
+
     for (let i = 1; i <= effectCount; i++) {
-      const thing = parseThingType(reader, i, ThingCategory.EFFECT, protocol);
-      if (thing) effects.push(thing);
+      try {
+        const thing = parseThingType(reader, i, ThingCategory.EFFECT, protocol);
+        if (thing) {
+          effects.push(thing);
+          successfulEffects++;
+        } else {
+          failedEffects++;
+        }
+      } catch (error) {
+        console.warn(`Failed to parse effect ${i}:`, error);
+        failedEffects++;
+        // Continue with next effect
+      }
     }
 
     // Parse missiles
     const missiles: ThingType[] = [];
+    let successfulMissiles = 0;
+    let failedMissiles = 0;
+
     for (let i = 1; i <= missileCount; i++) {
-      const thing = parseThingType(reader, i, ThingCategory.MISSILE, protocol);
-      if (thing) missiles.push(thing);
+      try {
+        const thing = parseThingType(
+          reader,
+          i,
+          ThingCategory.MISSILE,
+          protocol
+        );
+        if (thing) {
+          missiles.push(thing);
+          successfulMissiles++;
+        } else {
+          failedMissiles++;
+        }
+      } catch (error) {
+        console.warn(`Failed to parse missile ${i}:`, error);
+        failedMissiles++;
+        // Continue with next missile
+      }
     }
+
+    console.log("DAT Parsing Summary:", {
+      items: `${successfulItems}/${itemCount} (${failedItems} failed)`,
+      outfits: `${successfulOutfits}/${outfitCount} (${failedOutfits} failed)`,
+      effects: `${successfulEffects}/${effectCount} (${failedEffects} failed)`,
+      missiles: `${successfulMissiles}/${missileCount} (${failedMissiles} failed)`,
+    });
 
     return {
       signature,
@@ -186,7 +254,6 @@ function parseThingType(
     const thing: ThingType = {
       id,
       category,
-      clientId: id,
       // Basic properties
       width: 1,
       height: 1,
@@ -253,220 +320,309 @@ function parseThingType(
       unwrappable: false,
       topEffect: false,
       usable: false,
-      // Frame groups
-      frameGroups: {},
+      // Frame groups - initialize with proper type
+      frameGroups: {} as Record<FrameGroupType, FrameGroup>,
       spriteIds: [],
     };
 
+    // Check if we have enough bytes to read
+    if (reader.bytesAvailable < 1) {
+      console.warn(`Not enough bytes to read thing ${id}, skipping`);
+      return null;
+    }
+
     // Read properties flags until LAST_FLAG
     let flag = 0;
-    while (flag !== MetadataFlags.LAST_FLAG) {
+    let flagCount = 0;
+    const maxFlags = 100; // Safety limit
+
+    while (flag !== MetadataFlags.LAST_FLAG && flagCount < maxFlags) {
+      if (reader.bytesAvailable < 1) {
+        console.warn(
+          `Unexpected end of file while reading flags for thing ${id}`
+        );
+        break;
+      }
+
       const previousFlag = flag;
       flag = reader.readUint8();
+      flagCount++;
 
       if (flag === MetadataFlags.LAST_FLAG) {
         break;
       }
 
-      switch (flag) {
-        case MetadataFlags.GROUND:
-          thing.isGround = true;
-          thing.groundSpeed = reader.readUint16();
-          break;
+      try {
+        switch (flag) {
+          case MetadataFlags.GROUND:
+            thing.isGround = true;
+            thing.groundSpeed = reader.readUint16();
+            break;
 
-        case MetadataFlags.GROUND_BORDER:
-          thing.isGroundBorder = true;
-          break;
+          case MetadataFlags.GROUND_BORDER:
+            thing.isGroundBorder = true;
+            break;
 
-        case MetadataFlags.ON_BOTTOM:
-          thing.isOnBottom = true;
-          break;
+          case MetadataFlags.ON_BOTTOM:
+            thing.isOnBottom = true;
+            break;
 
-        case MetadataFlags.ON_TOP:
-          thing.isOnTop = true;
-          break;
+          case MetadataFlags.ON_TOP:
+            thing.isOnTop = true;
+            break;
 
-        case MetadataFlags.CONTAINER:
-          thing.isContainer = true;
-          break;
+          case MetadataFlags.CONTAINER:
+            thing.isContainer = true;
+            break;
 
-        case MetadataFlags.STACKABLE:
-          thing.stackable = true;
-          break;
+          case MetadataFlags.STACKABLE:
+            thing.stackable = true;
+            break;
 
-        case MetadataFlags.FORCE_USE:
-          thing.forceUse = true;
-          break;
+          case MetadataFlags.FORCE_USE:
+            thing.forceUse = true;
+            break;
 
-        case MetadataFlags.MULTI_USE:
-          thing.multiUse = true;
-          break;
+          case MetadataFlags.MULTI_USE:
+            thing.multiUse = true;
+            break;
 
-        case MetadataFlags.WRITABLE:
-          thing.writable = true;
-          thing.maxTextLength = reader.readUint16();
-          break;
+          case MetadataFlags.WRITABLE:
+            thing.writable = true;
+            thing.maxTextLength = reader.readUint16();
+            break;
 
-        case MetadataFlags.WRITABLE_ONCE:
-          thing.writableOnce = true;
-          thing.maxTextLength = reader.readUint16();
-          break;
+          case MetadataFlags.WRITABLE_ONCE:
+            thing.writableOnce = true;
+            thing.maxTextLength = reader.readUint16();
+            break;
 
-        case MetadataFlags.FLUID_CONTAINER:
-          thing.isFluidContainer = true;
-          break;
+          case MetadataFlags.FLUID_CONTAINER:
+            thing.isFluidContainer = true;
+            break;
 
-        case MetadataFlags.FLUID:
-          thing.isFluid = true;
-          break;
+          case MetadataFlags.FLUID:
+            thing.isFluid = true;
+            break;
 
-        case MetadataFlags.UNPASSABLE:
-          thing.isUnpassable = true;
-          break;
+          case MetadataFlags.UNPASSABLE:
+            thing.isUnpassable = true;
+            break;
 
-        case MetadataFlags.UNMOVEABLE:
-          thing.isUnmoveable = true;
-          break;
+          case MetadataFlags.UNMOVEABLE:
+            thing.isUnmoveable = true;
+            break;
 
-        case MetadataFlags.BLOCK_MISSILE:
-          thing.blockMissile = true;
-          break;
+          case MetadataFlags.BLOCK_MISSILE:
+            thing.blockMissile = true;
+            break;
 
-        case MetadataFlags.BLOCK_PATHFIND:
-          thing.blockPathfind = true;
-          break;
+          case MetadataFlags.BLOCK_PATHFIND:
+            thing.blockPathfind = true;
+            break;
 
-        case MetadataFlags.NO_MOVE_ANIMATION:
-          thing.noMoveAnimation = true;
-          break;
+          case MetadataFlags.NO_MOVE_ANIMATION:
+            thing.noMoveAnimation = true;
+            break;
 
-        case MetadataFlags.PICKUPABLE:
-          thing.pickupable = true;
-          break;
+          case MetadataFlags.PICKUPABLE:
+            thing.pickupable = true;
+            break;
 
-        case MetadataFlags.HANGABLE:
-          thing.hangable = true;
-          break;
+          case MetadataFlags.HANGABLE:
+            thing.hangable = true;
+            break;
 
-        case MetadataFlags.VERTICAL:
-          thing.isVertical = true;
-          break;
+          case MetadataFlags.VERTICAL:
+            thing.isVertical = true;
+            break;
 
-        case MetadataFlags.HORIZONTAL:
-          thing.isHorizontal = true;
-          break;
+          case MetadataFlags.HORIZONTAL:
+            thing.isHorizontal = true;
+            break;
 
-        case MetadataFlags.ROTATABLE:
-          thing.rotatable = true;
-          break;
+          case MetadataFlags.ROTATABLE:
+            thing.rotatable = true;
+            break;
 
-        case MetadataFlags.HAS_LIGHT:
-          thing.hasLight = true;
-          thing.lightLevel = reader.readUint16();
-          thing.lightColor = reader.readUint16();
-          break;
+          case MetadataFlags.HAS_LIGHT:
+            thing.hasLight = true;
+            thing.lightLevel = reader.readUint16();
+            thing.lightColor = reader.readUint16();
+            break;
 
-        case MetadataFlags.DONT_HIDE:
-          thing.dontHide = true;
-          break;
+          case MetadataFlags.DONT_HIDE:
+            thing.dontHide = true;
+            break;
 
-        case MetadataFlags.TRANSLUCENT:
-          thing.isTranslucent = true;
-          break;
+          case MetadataFlags.TRANSLUCENT:
+            thing.isTranslucent = true;
+            break;
 
-        case MetadataFlags.HAS_OFFSET:
-          thing.hasOffset = true;
-          thing.offsetX = reader.readInt16();
-          thing.offsetY = reader.readInt16();
-          break;
+          case MetadataFlags.HAS_OFFSET:
+            thing.hasOffset = true;
+            thing.offsetX = reader.readInt16();
+            thing.offsetY = reader.readInt16();
+            break;
 
-        case MetadataFlags.HAS_ELEVATION:
-          thing.hasElevation = true;
-          thing.elevation = reader.readUint16();
-          break;
+          case MetadataFlags.HAS_ELEVATION:
+            thing.hasElevation = true;
+            thing.elevation = reader.readUint16();
+            break;
 
-        case MetadataFlags.LYING_OBJECT:
-          thing.isLyingObject = true;
-          break;
+          case MetadataFlags.LYING_OBJECT:
+            thing.isLyingObject = true;
+            break;
 
-        case MetadataFlags.ANIMATE_ALWAYS:
-          thing.animateAlways = true;
-          break;
+          case MetadataFlags.ANIMATE_ALWAYS:
+            thing.animateAlways = true;
+            break;
 
-        case MetadataFlags.MINI_MAP:
-          thing.miniMap = true;
-          thing.miniMapColor = reader.readUint16();
-          break;
+          case MetadataFlags.MINI_MAP:
+            thing.miniMap = true;
+            thing.miniMapColor = reader.readUint16();
+            break;
 
-        case MetadataFlags.LENS_HELP:
-          thing.isLensHelp = true;
-          thing.lensHelp = reader.readUint16();
-          break;
+          case MetadataFlags.LENS_HELP:
+            thing.isLensHelp = true;
+            thing.lensHelp = reader.readUint16();
+            break;
 
-        case MetadataFlags.FULL_GROUND:
-          thing.isFullGround = true;
-          break;
+          case MetadataFlags.FULL_GROUND:
+            thing.isFullGround = true;
+            break;
 
-        case MetadataFlags.IGNORE_LOOK:
-          thing.ignoreLook = true;
-          break;
+          case MetadataFlags.IGNORE_LOOK:
+            thing.ignoreLook = true;
+            break;
 
-        case MetadataFlags.CLOTH:
-          thing.cloth = true;
-          thing.clothSlot = reader.readUint16();
-          break;
+          case MetadataFlags.CLOTH:
+            thing.cloth = true;
+            thing.clothSlot = reader.readUint16();
+            break;
 
-        case MetadataFlags.MARKET_ITEM:
-          thing.isMarketItem = true;
-          thing.marketCategory = reader.readUint16();
-          thing.marketTradeAs = reader.readUint16();
-          thing.marketShowAs = reader.readUint16();
-          const nameLength = reader.readUint16();
-          thing.marketName = reader.readString(nameLength, "iso-8859-1");
-          thing.marketRestrictProfession = reader.readUint16();
-          thing.marketRestrictLevel = reader.readUint16();
-          break;
+          case MetadataFlags.MARKET_ITEM:
+            thing.isMarketItem = true;
+            thing.marketCategory = reader.readUint16();
+            thing.marketTradeAs = reader.readUint16();
+            thing.marketShowAs = reader.readUint16();
 
-        case MetadataFlags.DEFAULT_ACTION:
-          thing.hasDefaultAction = true;
-          thing.defaultAction = reader.readUint16();
-          break;
+            const nameLength = reader.readUint16();
 
-        case MetadataFlags.WRAPPABLE:
-          thing.wrappable = true;
-          break;
+            // Add validation for name length
+            if (nameLength > 255 || nameLength < 0) {
+              console.warn(
+                `Invalid market name length ${nameLength} for thing ${id}, skipping name`
+              );
+              thing.marketName = "";
+              // Skip the invalid data - try to continue parsing
+              if (
+                nameLength > 0 &&
+                nameLength < 10000 &&
+                reader.bytesAvailable >= nameLength
+              ) {
+                reader.readBytes(nameLength); // Skip the invalid name data
+              }
+            } else if (reader.bytesAvailable >= nameLength) {
+              try {
+                thing.marketName = reader.readString(nameLength, "iso-8859-1");
+              } catch (error) {
+                console.warn(
+                  `Error reading market name for thing ${id}:`,
+                  error
+                );
+                thing.marketName = "";
+                if (reader.bytesAvailable >= nameLength) {
+                  reader.readBytes(nameLength); // Skip the problematic data
+                }
+              }
+            } else {
+              console.warn(
+                `Not enough bytes to read market name for thing ${id}`
+              );
+              thing.marketName = "";
+            }
 
-        case MetadataFlags.UNWRAPPABLE:
-          thing.unwrappable = true;
-          break;
+            thing.marketRestrictProfession = reader.readUint16();
+            thing.marketRestrictLevel = reader.readUint16();
+            break;
 
-        case MetadataFlags.TOP_EFFECT:
-          thing.topEffect = true;
-          break;
+          case MetadataFlags.DEFAULT_ACTION:
+            thing.hasDefaultAction = true;
+            thing.defaultAction = reader.readUint16();
+            break;
 
-        case MetadataFlags.USABLE:
-          thing.usable = true;
-          break;
+          case MetadataFlags.WRAPPABLE:
+            thing.wrappable = true;
+            break;
 
-        default:
-          console.warn(
-            `Unknown flag 0x${flag.toString(
-              16
-            )} (previous: 0x${previousFlag.toString(16)}) for ${category} ${id}`
-          );
-          // Don't throw error, just skip unknown flags
-          break;
+          case MetadataFlags.UNWRAPPABLE:
+            thing.unwrappable = true;
+            break;
+
+          case MetadataFlags.TOP_EFFECT:
+            thing.topEffect = true;
+            break;
+
+          case MetadataFlags.USABLE:
+            thing.usable = true;
+            break;
+
+          default:
+            console.warn(
+              `Unknown flag 0x${flag.toString(
+                16
+              )} (previous: 0x${previousFlag.toString(
+                16
+              )}) for ${category} ${id} at position ${reader.currentPosition}`
+            );
+            // Don't throw error, just skip unknown flags
+            break;
+        }
+      } catch (flagError) {
+        console.error(
+          `Error processing flag 0x${flag.toString(16)} for thing ${id}:`,
+          flagError
+        );
+        // Try to continue parsing by breaking out of flag loop
+        break;
       }
     }
 
+    if (flagCount >= maxFlags) {
+      console.warn(
+        `Maximum flag count reached for thing ${id}, stopping flag parsing`
+      );
+    }
+
     // Now read texture patterns (frame groups)
-    parseTexturePatterns(reader, thing);
+    try {
+      parseTexturePatterns(reader, thing);
+    } catch (textureError) {
+      console.warn(
+        `Error parsing texture patterns for thing ${id}:`,
+        textureError
+      );
+      // Set minimal frame group as fallback
+      thing.frameGroups[FrameGroupType.DEFAULT] = {
+        type: FrameGroupType.DEFAULT,
+        width: 1,
+        height: 1,
+        layers: 1,
+        patternX: 1,
+        patternY: 1,
+        patternZ: 1,
+        frames: 1,
+        spriteIds: [],
+      };
+    }
 
     return thing;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error parsing thing ${id}:`, error);
-    throw new Error(`Failed to parse thing ${id}: ${message}`);
+    // Return null instead of throwing to allow parsing to continue
+    return null;
   }
 }
 
@@ -485,6 +641,7 @@ function parseFrameGroup(reader: BinaryReader): FrameGroup {
     patternZ: reader.readUint8(),
     frames: reader.readUint8(),
     spriteIndex: [],
+    spriteIds: [], // Add the missing property
     isAnimation: false,
     animationMode: 0,
     loopCount: 0,
@@ -519,8 +676,11 @@ function parseFrameGroup(reader: BinaryReader): FrameGroup {
     frameGroup.frames;
 
   frameGroup.spriteIndex = [];
+  frameGroup.spriteIds = [];
   for (let i = 0; i < totalSprites; i++) {
-    frameGroup.spriteIndex.push(reader.readUint32());
+    const spriteId = reader.readUint32();
+    frameGroup.spriteIndex.push(spriteId);
+    frameGroup.spriteIds.push(spriteId);
   }
 
   return frameGroup;
