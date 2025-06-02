@@ -23,5 +23,5 @@ logs
 .env.*
 !.env.example
 
-#obj-builder
-/ObjectBuilder
+#OBJ
+/object_builder_src
