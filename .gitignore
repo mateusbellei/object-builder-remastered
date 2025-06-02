@@ -23,5 +23,24 @@ logs
 .env.*
 !.env.example
 
-#OBJ
-/object_builder_src
+
+#OBJ Files
+
+# Build and Release Folders
+/object_builder_src/bin/
+/object_builder_src/bin-debug/
+/object_builder_src/bin-debug-temp/
+/object_builder_src/bin-release/
+/object_builder_src/bin-release-temp/
+/object_builder_src/workerswfs/
+
+# Other files and folders
+/object_builder_src/*.swf
+/object_builder_src/.settings/
+/object_builder_src/.vscode/
+
+/object_builder_src/*.p12
+
+# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
+# should NOT be excluded as they contain compiler settings and other important
+# information for Eclipse / Flash Builder.
