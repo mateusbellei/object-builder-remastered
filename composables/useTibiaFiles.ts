@@ -1,3 +1,4 @@
+import { ref, computed, reactive } from "vue";
 import type {
   ProjectData,
   DatFileData,
@@ -23,6 +24,7 @@ import {
   parseSprFile,
   parseOtfiFile,
   getProtocolForClientVersion,
+  detectProtocolFromSignatures,
 } from "~/utils/tibiaFileParser";
 
 // Type declarations for browser APIs
@@ -63,8 +65,9 @@ export const useTibiaFiles = () => {
       projectState.isLoaded = false;
       projectState.loadedFiles = { dat: false, spr: false, otfi: false };
 
-      // Determine protocol version
-      let protocol = PROTOCOL_VERSIONS[projectState.protocol];
+      let detectedProtocol: ProtocolVersion | null = null;
+      let datSignature: number | null = null;
+      let sprSignature: number | null = null;
 
       // Load OTFI first to get metadata
       if (files.otfi) {
@@ -73,13 +76,6 @@ export const useTibiaFiles = () => {
           projectState.otfiMetadata = otfiData;
           projectState.loadedFiles.otfi = true;
 
-          // Update protocol based on OTFI metadata
-          if (otfiData.clientVersion) {
-            protocol = getProtocolForClientVersion(otfiData.clientVersion);
-            projectState.protocol = protocol.version;
-            projectState.clientVersion = otfiData.clientVersion;
-          }
-
           console.log("OTFI metadata loaded:", otfiData);
         } catch (error) {
           console.error("Error loading OTFI file:", error);
@@ -87,10 +83,50 @@ export const useTibiaFiles = () => {
         }
       }
 
+      // Pre-read signatures to detect protocol
+      if (files.dat && files.spr) {
+        try {
+          // Read DAT signature
+          const datBuffer = await files.dat.arrayBuffer();
+          const datView = new DataView(datBuffer);
+          datSignature = datView.getUint32(0, true); // little endian
+
+          // Read SPR signature
+          const sprBuffer = await files.spr.arrayBuffer();
+          const sprView = new DataView(sprBuffer);
+          sprSignature = sprView.getUint32(0, true); // little endian
+
+          // Detect protocol from signatures
+          detectedProtocol = detectProtocolFromSignatures(
+            datSignature,
+            sprSignature
+          );
+
+          console.log("🔍 Protocol detected from signatures:", {
+            dat: datSignature.toString(16).toUpperCase(),
+            spr: sprSignature.toString(16).toUpperCase(),
+            protocol: detectedProtocol.version,
+          });
+
+          // Update project state with detected protocol
+          projectState.protocol = detectedProtocol.version;
+
+          // Try to get client version from protocol
+          if (detectedProtocol.clientVersionMin) {
+            projectState.clientVersion = detectedProtocol.clientVersionMin;
+          }
+        } catch (error) {
+          console.warn("Could not detect protocol from signatures:", error);
+        }
+      }
+
       // Load DAT file
       if (files.dat) {
         try {
-          const datData = await parseDatFile(files.dat, protocol);
+          const datData = await parseDatFile(
+            files.dat,
+            detectedProtocol || undefined
+          );
           projectState.datFile = datData;
           projectState.loadedFiles.dat = true;
 

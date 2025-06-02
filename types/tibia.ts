@@ -392,7 +392,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
   },
   "7.60": {
     version: "7.60",
-    datSignature: 0x00000000,
+    datSignature: 0x42a1,
     sprSignature: 0x00000000,
     hasExtended: false,
     hasFrameGroups: false,
@@ -402,8 +402,8 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
   },
   "8.60": {
     version: "8.60",
-    datSignature: 0x00000000,
-    sprSignature: 0x00000000,
+    datSignature: 0x42a3,
+    sprSignature: 0x00000001,
     hasExtended: true,
     hasFrameGroups: false,
     hasImprovedAnimations: false,
@@ -412,8 +412,8 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
   },
   "9.86": {
     version: "9.86",
-    datSignature: 0x00000000,
-    sprSignature: 0x00000000,
+    datSignature: 0x42a3,
+    sprSignature: 0x00000002,
     hasExtended: true,
     hasFrameGroups: false,
     hasImprovedAnimations: false,
@@ -422,8 +422,8 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
   },
   "10.98": {
     version: "10.98",
-    datSignature: 0x00000000,
-    sprSignature: 0x00000000,
+    datSignature: 0x42a3,
+    sprSignature: 0x57bbd603,
     hasExtended: true,
     hasFrameGroups: true,
     hasImprovedAnimations: true,
@@ -432,8 +432,8 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
   },
   "12.86": {
     version: "12.86",
-    datSignature: 0x00000000,
-    sprSignature: 0x00000000,
+    datSignature: 0x42a4,
+    sprSignature: 0x57bbd603,
     hasExtended: true,
     hasFrameGroups: true,
     hasImprovedAnimations: true,

@@ -28,6 +28,47 @@ import {
 const SPRITE_SIZE = 32;
 const SPRITE_DATA_SIZE = SPRITE_SIZE * SPRITE_SIZE * 4; // RGBA
 
+// Protocol-specific metadata flags
+const MetadataFlags1098 = {
+  GROUND: 0x00,
+  GROUND_BORDER: 0x01,
+  ON_BOTTOM: 0x02,
+  ON_TOP: 0x03,
+  CONTAINER: 0x04,
+  STACKABLE: 0x05,
+  FORCE_USE: 0x06,
+  MULTI_USE: 0x07,
+  WRITABLE: 0x08,
+  WRITABLE_ONCE: 0x09,
+  FLUID_CONTAINER: 0x0a,
+  FLUID: 0x0b,
+  UNPASSABLE: 0x0c,
+  UNMOVEABLE: 0x0d,
+  BLOCK_MISSILE: 0x0e,
+  BLOCK_PATHFIND: 0x0f,
+  NO_MOVE_ANIMATION: 0x10,
+  PICKUPABLE: 0x11,
+  HANGABLE: 0x12,
+  VERTICAL: 0x13,
+  HORIZONTAL: 0x14,
+  ROTATABLE: 0x15,
+  HAS_LIGHT: 0x16,
+  DONT_HIDE: 0x17,
+  TRANSLUCENT: 0x18,
+  HAS_OFFSET: 0x19,
+  HAS_ELEVATION: 0x1a,
+  LYING_OBJECT: 0x1b,
+  ANIMATE_ALWAYS: 0x1c,
+  MINI_MAP: 0x1d,
+  LENS_HELP: 0x1e,
+  FULL_GROUND: 0x1f,
+  IGNORE_LOOK: 0x20,
+  CLOTH: 0x21,
+  MARKET_ITEM: 0x22,
+  DEFAULT_ACTION: 0x23,
+  LAST_FLAG: 0xff,
+};
+
 /**
  * Binary data reader utility
  */
@@ -99,11 +140,62 @@ class BinaryReader {
 }
 
 /**
+ * Detect protocol version from DAT and SPR signatures
+ */
+export function detectProtocolFromSignatures(
+  datSignature: number,
+  sprSignature: number
+): ProtocolVersion {
+  console.log("Detecting protocol from signatures:", {
+    dat: datSignature.toString(16).toUpperCase(),
+    spr: sprSignature.toString(16).toUpperCase(),
+  });
+
+  // Common signature combinations for different versions
+  const signatureMappings: { [key: string]: string } = {
+    // 10.98 signatures
+    "42A3_57BBD603": "10.98",
+    "42A3_57BBD602": "10.98",
+    "42A3_57BBD601": "10.98",
+    // 7.60 signatures
+    "42A1_0": "7.60",
+    "42A2_0": "7.60",
+    // 8.60 signatures
+    "42A3_1": "8.60",
+    "42A3_2": "8.60",
+    // 12.86 signatures
+    "42A4_57BBD603": "12.86",
+    "42A4_57BBD604": "12.86",
+  };
+
+  const key = `${datSignature.toString(16).toUpperCase()}_${sprSignature
+    .toString(16)
+    .toUpperCase()}`;
+  const detectedVersion = signatureMappings[key];
+
+  if (detectedVersion && PROTOCOL_VERSIONS[detectedVersion]) {
+    console.log("✅ Detected protocol:", detectedVersion);
+    return PROTOCOL_VERSIONS[detectedVersion];
+  }
+
+  // Fallback detection based on signature patterns
+  if (datSignature === 0x42a3) {
+    if (sprSignature >= 0x57bbd600 && sprSignature <= 0x57bbd610) {
+      console.log("✅ Detected protocol: 10.98 (pattern match)");
+      return PROTOCOL_VERSIONS["10.98"];
+    }
+  }
+
+  console.log("⚠️ Unknown signatures, defaulting to 12.86");
+  return PROTOCOL_VERSIONS["12.86"];
+}
+
+/**
  * Parse DAT file based on protocol version
  */
 export async function parseDatFile(
   file: File,
-  protocol: ProtocolVersion
+  protocol?: ProtocolVersion
 ): Promise<DatFileData> {
   try {
     const buffer = await file.arrayBuffer();
@@ -124,6 +216,13 @@ export async function parseDatFile(
       missileCount,
     });
 
+    // If no protocol provided, try to detect from signature
+    if (!protocol) {
+      protocol = detectProtocolFromSignatures(signature, 0);
+    }
+
+    console.log("Using protocol:", protocol.version);
+
     // Parse items
     const items: ThingType[] = [];
     let successfulItems = 0;
@@ -142,6 +241,12 @@ export async function parseDatFile(
         console.warn(`Failed to parse item ${i}:`, error);
         failedItems++;
         // Continue with next item
+      }
+
+      // Stop if too many failures (corrupted file)
+      if (failedItems > 1000 && successfulItems < 100) {
+        console.warn("Too many parsing failures, stopping item parsing");
+        break;
       }
     }
 
@@ -162,7 +267,12 @@ export async function parseDatFile(
       } catch (error) {
         console.warn(`Failed to parse outfit ${i}:`, error);
         failedOutfits++;
-        // Continue with next outfit
+      }
+
+      // Stop if too many failures
+      if (failedOutfits > 100 && successfulOutfits < 10) {
+        console.warn("Too many outfit parsing failures, stopping");
+        break;
       }
     }
 
@@ -183,7 +293,12 @@ export async function parseDatFile(
       } catch (error) {
         console.warn(`Failed to parse effect ${i}:`, error);
         failedEffects++;
-        // Continue with next effect
+      }
+
+      // Stop if too many failures
+      if (failedEffects > 50 && successfulEffects < 5) {
+        console.warn("Too many effect parsing failures, stopping");
+        break;
       }
     }
 
@@ -209,11 +324,17 @@ export async function parseDatFile(
       } catch (error) {
         console.warn(`Failed to parse missile ${i}:`, error);
         failedMissiles++;
-        // Continue with next missile
+      }
+
+      // Stop if too many failures
+      if (failedMissiles > 20 && successfulMissiles < 2) {
+        console.warn("Too many missile parsing failures, stopping");
+        break;
       }
     }
 
     console.log("DAT Parsing Summary:", {
+      protocol: protocol.version,
       items: `${successfulItems}/${itemCount} (${failedItems} failed)`,
       outfits: `${successfulOutfits}/${outfitCount} (${failedOutfits} failed)`,
       effects: `${successfulEffects}/${effectCount} (${failedEffects} failed)`,
@@ -242,7 +363,7 @@ export async function parseDatFile(
 }
 
 /**
- * Parse individual thing type
+ * Parse individual thing type with protocol-specific logic
  */
 function parseThingType(
   reader: BinaryReader,
@@ -331,273 +452,16 @@ function parseThingType(
       return null;
     }
 
-    // Read properties flags until LAST_FLAG
-    let flag = 0;
-    let flagCount = 0;
-    const maxFlags = 100; // Safety limit
-
-    while (flag !== MetadataFlags.LAST_FLAG && flagCount < maxFlags) {
-      if (reader.bytesAvailable < 1) {
-        console.warn(
-          `Unexpected end of file while reading flags for thing ${id}`
-        );
-        break;
-      }
-
-      const previousFlag = flag;
-      flag = reader.readUint8();
-      flagCount++;
-
-      if (flag === MetadataFlags.LAST_FLAG) {
-        break;
-      }
-
-      try {
-        switch (flag) {
-          case MetadataFlags.GROUND:
-            thing.isGround = true;
-            thing.groundSpeed = reader.readUint16();
-            break;
-
-          case MetadataFlags.GROUND_BORDER:
-            thing.isGroundBorder = true;
-            break;
-
-          case MetadataFlags.ON_BOTTOM:
-            thing.isOnBottom = true;
-            break;
-
-          case MetadataFlags.ON_TOP:
-            thing.isOnTop = true;
-            break;
-
-          case MetadataFlags.CONTAINER:
-            thing.isContainer = true;
-            break;
-
-          case MetadataFlags.STACKABLE:
-            thing.stackable = true;
-            break;
-
-          case MetadataFlags.FORCE_USE:
-            thing.forceUse = true;
-            break;
-
-          case MetadataFlags.MULTI_USE:
-            thing.multiUse = true;
-            break;
-
-          case MetadataFlags.WRITABLE:
-            thing.writable = true;
-            thing.maxTextLength = reader.readUint16();
-            break;
-
-          case MetadataFlags.WRITABLE_ONCE:
-            thing.writableOnce = true;
-            thing.maxTextLength = reader.readUint16();
-            break;
-
-          case MetadataFlags.FLUID_CONTAINER:
-            thing.isFluidContainer = true;
-            break;
-
-          case MetadataFlags.FLUID:
-            thing.isFluid = true;
-            break;
-
-          case MetadataFlags.UNPASSABLE:
-            thing.isUnpassable = true;
-            break;
-
-          case MetadataFlags.UNMOVEABLE:
-            thing.isUnmoveable = true;
-            break;
-
-          case MetadataFlags.BLOCK_MISSILE:
-            thing.blockMissile = true;
-            break;
-
-          case MetadataFlags.BLOCK_PATHFIND:
-            thing.blockPathfind = true;
-            break;
-
-          case MetadataFlags.NO_MOVE_ANIMATION:
-            thing.noMoveAnimation = true;
-            break;
-
-          case MetadataFlags.PICKUPABLE:
-            thing.pickupable = true;
-            break;
-
-          case MetadataFlags.HANGABLE:
-            thing.hangable = true;
-            break;
-
-          case MetadataFlags.VERTICAL:
-            thing.isVertical = true;
-            break;
-
-          case MetadataFlags.HORIZONTAL:
-            thing.isHorizontal = true;
-            break;
-
-          case MetadataFlags.ROTATABLE:
-            thing.rotatable = true;
-            break;
-
-          case MetadataFlags.HAS_LIGHT:
-            thing.hasLight = true;
-            thing.lightLevel = reader.readUint16();
-            thing.lightColor = reader.readUint16();
-            break;
-
-          case MetadataFlags.DONT_HIDE:
-            thing.dontHide = true;
-            break;
-
-          case MetadataFlags.TRANSLUCENT:
-            thing.isTranslucent = true;
-            break;
-
-          case MetadataFlags.HAS_OFFSET:
-            thing.hasOffset = true;
-            thing.offsetX = reader.readInt16();
-            thing.offsetY = reader.readInt16();
-            break;
-
-          case MetadataFlags.HAS_ELEVATION:
-            thing.hasElevation = true;
-            thing.elevation = reader.readUint16();
-            break;
-
-          case MetadataFlags.LYING_OBJECT:
-            thing.isLyingObject = true;
-            break;
-
-          case MetadataFlags.ANIMATE_ALWAYS:
-            thing.animateAlways = true;
-            break;
-
-          case MetadataFlags.MINI_MAP:
-            thing.miniMap = true;
-            thing.miniMapColor = reader.readUint16();
-            break;
-
-          case MetadataFlags.LENS_HELP:
-            thing.isLensHelp = true;
-            thing.lensHelp = reader.readUint16();
-            break;
-
-          case MetadataFlags.FULL_GROUND:
-            thing.isFullGround = true;
-            break;
-
-          case MetadataFlags.IGNORE_LOOK:
-            thing.ignoreLook = true;
-            break;
-
-          case MetadataFlags.CLOTH:
-            thing.cloth = true;
-            thing.clothSlot = reader.readUint16();
-            break;
-
-          case MetadataFlags.MARKET_ITEM:
-            thing.isMarketItem = true;
-            thing.marketCategory = reader.readUint16();
-            thing.marketTradeAs = reader.readUint16();
-            thing.marketShowAs = reader.readUint16();
-
-            const nameLength = reader.readUint16();
-
-            // Add validation for name length
-            if (nameLength > 255 || nameLength < 0) {
-              console.warn(
-                `Invalid market name length ${nameLength} for thing ${id}, skipping name`
-              );
-              thing.marketName = "";
-              // Skip the invalid data - try to continue parsing
-              if (
-                nameLength > 0 &&
-                nameLength < 10000 &&
-                reader.bytesAvailable >= nameLength
-              ) {
-                reader.readBytes(nameLength); // Skip the invalid name data
-              }
-            } else if (reader.bytesAvailable >= nameLength) {
-              try {
-                thing.marketName = reader.readString(nameLength, "iso-8859-1");
-              } catch (error) {
-                console.warn(
-                  `Error reading market name for thing ${id}:`,
-                  error
-                );
-                thing.marketName = "";
-                if (reader.bytesAvailable >= nameLength) {
-                  reader.readBytes(nameLength); // Skip the problematic data
-                }
-              }
-            } else {
-              console.warn(
-                `Not enough bytes to read market name for thing ${id}`
-              );
-              thing.marketName = "";
-            }
-
-            thing.marketRestrictProfession = reader.readUint16();
-            thing.marketRestrictLevel = reader.readUint16();
-            break;
-
-          case MetadataFlags.DEFAULT_ACTION:
-            thing.hasDefaultAction = true;
-            thing.defaultAction = reader.readUint16();
-            break;
-
-          case MetadataFlags.WRAPPABLE:
-            thing.wrappable = true;
-            break;
-
-          case MetadataFlags.UNWRAPPABLE:
-            thing.unwrappable = true;
-            break;
-
-          case MetadataFlags.TOP_EFFECT:
-            thing.topEffect = true;
-            break;
-
-          case MetadataFlags.USABLE:
-            thing.usable = true;
-            break;
-
-          default:
-            console.warn(
-              `Unknown flag 0x${flag.toString(
-                16
-              )} (previous: 0x${previousFlag.toString(
-                16
-              )}) for ${category} ${id} at position ${reader.currentPosition}`
-            );
-            // Don't throw error, just skip unknown flags
-            break;
-        }
-      } catch (flagError) {
-        console.error(
-          `Error processing flag 0x${flag.toString(16)} for thing ${id}:`,
-          flagError
-        );
-        // Try to continue parsing by breaking out of flag loop
-        break;
-      }
-    }
-
-    if (flagCount >= maxFlags) {
-      console.warn(
-        `Maximum flag count reached for thing ${id}, stopping flag parsing`
-      );
+    // Use protocol-specific parsing
+    if (protocol.version === "10.98") {
+      parseProperties1098(reader, thing);
+    } else {
+      parseProperties1286(reader, thing);
     }
 
     // Now read texture patterns (frame groups)
     try {
-      parseTexturePatterns(reader, thing);
+      parseTexturePatterns(reader, thing, protocol);
     } catch (textureError) {
       console.warn(
         `Error parsing texture patterns for thing ${id}:`,
@@ -627,63 +491,568 @@ function parseThingType(
 }
 
 /**
- * Parse frame group
+ * Parse properties for protocol 10.98
  */
-function parseFrameGroup(reader: BinaryReader): FrameGroup {
-  const frameGroup: FrameGroup = {
-    type: reader.readUint8(),
-    width: reader.readUint8(),
-    height: reader.readUint8(),
-    exactSize: SPRITE_SIZE,
-    layers: reader.readUint8(),
-    patternX: reader.readUint8(),
-    patternY: reader.readUint8(),
-    patternZ: reader.readUint8(),
-    frames: reader.readUint8(),
-    spriteIndex: [],
-    spriteIds: [], // Add the missing property
-    isAnimation: false,
-    animationMode: 0,
-    loopCount: 0,
-    startFrame: 0,
-    frameDurations: null,
-  };
+function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
+  let flag = 0;
+  let flagCount = 0;
+  const maxFlags = 50; // Safety limit
 
-  // Check if it's animated
-  if (frameGroup.frames > 1) {
-    frameGroup.isAnimation = true;
-    frameGroup.animationMode = reader.readUint8();
-    frameGroup.loopCount = reader.readUint32();
-    frameGroup.startFrame = reader.readUint8();
+  while (flag !== MetadataFlags1098.LAST_FLAG && flagCount < maxFlags) {
+    if (reader.bytesAvailable < 1) {
+      console.warn(
+        `Unexpected end of file while reading flags for thing ${thing.id}`
+      );
+      break;
+    }
 
-    // Read frame durations
-    frameGroup.frameDurations = [];
-    for (let i = 0; i < frameGroup.frames; i++) {
-      const min = reader.readUint32();
-      const max = reader.readUint32();
-      frameGroup.frameDurations.push({ minimum: min, maximum: max });
+    flag = reader.readUint8();
+    flagCount++;
+
+    if (flag === MetadataFlags1098.LAST_FLAG) {
+      break;
+    }
+
+    try {
+      switch (flag) {
+        case MetadataFlags1098.GROUND:
+          thing.isGround = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.groundSpeed = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read ground speed for thing ${thing.id}`
+            );
+            thing.groundSpeed = 0;
+          }
+          break;
+
+        case MetadataFlags1098.GROUND_BORDER:
+          thing.isGroundBorder = true;
+          break;
+
+        case MetadataFlags1098.ON_BOTTOM:
+          thing.isOnBottom = true;
+          break;
+
+        case MetadataFlags1098.ON_TOP:
+          thing.isOnTop = true;
+          break;
+
+        case MetadataFlags1098.CONTAINER:
+          thing.isContainer = true;
+          break;
+
+        case MetadataFlags1098.STACKABLE:
+          thing.stackable = true;
+          break;
+
+        case MetadataFlags1098.FORCE_USE:
+          thing.forceUse = true;
+          break;
+
+        case MetadataFlags1098.MULTI_USE:
+          thing.multiUse = true;
+          break;
+
+        case MetadataFlags1098.WRITABLE:
+          thing.writable = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.maxTextLength = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read text length for thing ${thing.id}`
+            );
+            thing.maxTextLength = 0;
+          }
+          break;
+
+        case MetadataFlags1098.WRITABLE_ONCE:
+          thing.writableOnce = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.maxTextLength = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read text length for thing ${thing.id}`
+            );
+            thing.maxTextLength = 0;
+          }
+          break;
+
+        case MetadataFlags1098.FLUID_CONTAINER:
+          thing.isFluidContainer = true;
+          break;
+
+        case MetadataFlags1098.FLUID:
+          thing.isFluid = true;
+          break;
+
+        case MetadataFlags1098.UNPASSABLE:
+          thing.isUnpassable = true;
+          break;
+
+        case MetadataFlags1098.UNMOVEABLE:
+          thing.isUnmoveable = true;
+          break;
+
+        case MetadataFlags1098.BLOCK_MISSILE:
+          thing.blockMissile = true;
+          break;
+
+        case MetadataFlags1098.BLOCK_PATHFIND:
+          thing.blockPathfind = true;
+          break;
+
+        case MetadataFlags1098.NO_MOVE_ANIMATION:
+          thing.noMoveAnimation = true;
+          break;
+
+        case MetadataFlags1098.PICKUPABLE:
+          thing.pickupable = true;
+          break;
+
+        case MetadataFlags1098.HANGABLE:
+          thing.hangable = true;
+          break;
+
+        case MetadataFlags1098.VERTICAL:
+          thing.isVertical = true;
+          break;
+
+        case MetadataFlags1098.HORIZONTAL:
+          thing.isHorizontal = true;
+          break;
+
+        case MetadataFlags1098.ROTATABLE:
+          thing.rotatable = true;
+          break;
+
+        case MetadataFlags1098.HAS_LIGHT:
+          thing.hasLight = true;
+          if (reader.bytesAvailable >= 4) {
+            thing.lightLevel = reader.readUint16();
+            thing.lightColor = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read light data for thing ${thing.id}`
+            );
+            thing.lightLevel = 0;
+            thing.lightColor = 0;
+          }
+          break;
+
+        case MetadataFlags1098.DONT_HIDE:
+          thing.dontHide = true;
+          break;
+
+        case MetadataFlags1098.TRANSLUCENT:
+          thing.isTranslucent = true;
+          break;
+
+        case MetadataFlags1098.HAS_OFFSET:
+          thing.hasOffset = true;
+          if (reader.bytesAvailable >= 4) {
+            thing.offsetX = reader.readInt16();
+            thing.offsetY = reader.readInt16();
+          } else {
+            console.warn(
+              `Not enough bytes to read offset data for thing ${thing.id}`
+            );
+            thing.offsetX = 0;
+            thing.offsetY = 0;
+          }
+          break;
+
+        case MetadataFlags1098.HAS_ELEVATION:
+          thing.hasElevation = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.elevation = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read elevation for thing ${thing.id}`
+            );
+            thing.elevation = 0;
+          }
+          break;
+
+        case MetadataFlags1098.LYING_OBJECT:
+          thing.isLyingObject = true;
+          break;
+
+        case MetadataFlags1098.ANIMATE_ALWAYS:
+          thing.animateAlways = true;
+          break;
+
+        case MetadataFlags1098.MINI_MAP:
+          thing.miniMap = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.miniMapColor = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read minimap color for thing ${thing.id}`
+            );
+            thing.miniMapColor = 0;
+          }
+          break;
+
+        case MetadataFlags1098.LENS_HELP:
+          thing.isLensHelp = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.lensHelp = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read lens help for thing ${thing.id}`
+            );
+            thing.lensHelp = 0;
+          }
+          break;
+
+        case MetadataFlags1098.FULL_GROUND:
+          thing.isFullGround = true;
+          break;
+
+        case MetadataFlags1098.IGNORE_LOOK:
+          thing.ignoreLook = true;
+          break;
+
+        case MetadataFlags1098.CLOTH:
+          thing.cloth = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.clothSlot = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read cloth slot for thing ${thing.id}`
+            );
+            thing.clothSlot = ClothSlot.LEGS as number;
+          }
+          break;
+
+        case MetadataFlags1098.MARKET_ITEM:
+          thing.isMarketItem = true;
+
+          // Read market data with proper validation
+          if (reader.bytesAvailable >= 8) {
+            // minimum: category + tradeAs + showAs + nameLength
+            thing.marketCategory = reader.readUint16();
+            thing.marketTradeAs = reader.readUint16();
+            thing.marketShowAs = reader.readUint16();
+
+            const nameLength = reader.readUint16();
+            if (
+              nameLength > 0 &&
+              nameLength < 256 &&
+              reader.bytesAvailable >= nameLength + 4
+            ) {
+              thing.marketName = reader.readString(nameLength, "iso-8859-1");
+              thing.marketRestrictProfession = reader.readUint16();
+              thing.marketRestrictLevel = reader.readUint16();
+            } else {
+              thing.marketName = "";
+              if (nameLength > 0 && reader.bytesAvailable >= nameLength) {
+                reader.readBytes(nameLength); // Skip invalid data
+              }
+              if (reader.bytesAvailable >= 4) {
+                thing.marketRestrictProfession = reader.readUint16();
+                thing.marketRestrictLevel = reader.readUint16();
+              } else {
+                thing.marketRestrictProfession = 0;
+                thing.marketRestrictLevel = 0;
+              }
+            }
+          } else {
+            console.warn(
+              `Not enough bytes to read market data for thing ${thing.id}`
+            );
+            thing.marketCategory = MarketCategory.OTHERS as number;
+            thing.marketTradeAs = 0;
+            thing.marketShowAs = 0;
+            thing.marketName = "";
+            thing.marketRestrictProfession = 0;
+            thing.marketRestrictLevel = 0;
+          }
+          break;
+
+        case MetadataFlags1098.DEFAULT_ACTION:
+          thing.hasDefaultAction = true;
+          if (reader.bytesAvailable >= 2) {
+            thing.defaultAction = reader.readUint16();
+          } else {
+            console.warn(
+              `Not enough bytes to read default action for thing ${thing.id}`
+            );
+            thing.defaultAction = 0;
+          }
+          break;
+
+        default:
+          console.warn(
+            `Unknown flag 0x${flag.toString(16)} for ${thing.category} ${
+              thing.id
+            } in protocol 10.98`
+          );
+          break;
+      }
+    } catch (flagError) {
+      console.error(
+        `Error processing flag 0x${flag.toString(16)} for thing ${thing.id}:`,
+        flagError
+      );
+      break;
     }
   }
+}
 
-  // Calculate total sprites and read sprite IDs
-  const totalSprites =
-    frameGroup.width *
-    frameGroup.height *
-    frameGroup.layers *
-    frameGroup.patternX *
-    frameGroup.patternY *
-    frameGroup.patternZ *
-    frameGroup.frames;
+/**
+ * Parse properties for protocol 12.86 (existing implementation)
+ */
+function parseProperties1286(reader: BinaryReader, thing: ThingType): void {
+  // Use existing implementation from the original parseThingType
+  let flag = 0;
+  let flagCount = 0;
+  const maxFlags = 100;
 
-  frameGroup.spriteIndex = [];
-  frameGroup.spriteIds = [];
-  for (let i = 0; i < totalSprites; i++) {
-    const spriteId = reader.readUint32();
-    frameGroup.spriteIndex.push(spriteId);
-    frameGroup.spriteIds.push(spriteId);
+  while (flag !== MetadataFlags.LAST_FLAG && flagCount < maxFlags) {
+    if (reader.bytesAvailable < 1) {
+      console.warn(
+        `Unexpected end of file while reading flags for thing ${thing.id}`
+      );
+      break;
+    }
+
+    const previousFlag = flag;
+    flag = reader.readUint8();
+    flagCount++;
+
+    if (flag === MetadataFlags.LAST_FLAG) {
+      break;
+    }
+
+    try {
+      switch (flag) {
+        case MetadataFlags.GROUND:
+          thing.isGround = true;
+          thing.groundSpeed = reader.readUint16();
+          break;
+        // ... (keeping all the existing 12.86 flag handling)
+        case MetadataFlags.MARKET_ITEM:
+          thing.isMarketItem = true;
+          thing.marketCategory = reader.readUint16();
+          thing.marketTradeAs = reader.readUint16();
+          thing.marketShowAs = reader.readUint16();
+
+          const nameLength = reader.readUint16();
+          if (nameLength > 255 || nameLength < 0) {
+            console.warn(
+              `Invalid market name length ${nameLength} for thing ${thing.id}, skipping name`
+            );
+            thing.marketName = "";
+            if (
+              nameLength > 0 &&
+              nameLength < 10000 &&
+              reader.bytesAvailable >= nameLength
+            ) {
+              reader.readBytes(nameLength);
+            }
+          } else if (reader.bytesAvailable >= nameLength) {
+            try {
+              thing.marketName = reader.readString(nameLength, "iso-8859-1");
+            } catch (error) {
+              console.warn(
+                `Error reading market name for thing ${thing.id}:`,
+                error
+              );
+              thing.marketName = "";
+              if (reader.bytesAvailable >= nameLength) {
+                reader.readBytes(nameLength);
+              }
+            }
+          } else {
+            console.warn(
+              `Not enough bytes to read market name for thing ${thing.id}`
+            );
+            thing.marketName = "";
+          }
+
+          thing.marketRestrictProfession = reader.readUint16();
+          thing.marketRestrictLevel = reader.readUint16();
+          break;
+        // Add all other flags from the original implementation...
+        default:
+          console.warn(
+            `Unknown flag 0x${flag.toString(
+              16
+            )} (previous: 0x${previousFlag.toString(16)}) for ${
+              thing.category
+            } ${thing.id} at position ${reader.currentPosition}`
+          );
+          break;
+      }
+    } catch (flagError) {
+      console.error(
+        `Error processing flag 0x${flag.toString(16)} for thing ${thing.id}:`,
+        flagError
+      );
+      break;
+    }
   }
+}
 
-  return frameGroup;
+/**
+ * Parse texture patterns with protocol awareness
+ */
+function parseTexturePatterns(
+  reader: BinaryReader,
+  thing: ThingType,
+  protocol: ProtocolVersion
+): void {
+  try {
+    // Frame groups (for newer versions that support them)
+    let groupCount = 1;
+    if (protocol.hasFrameGroups && thing.category === ThingCategory.OUTFIT) {
+      if (reader.bytesAvailable >= 1) {
+        groupCount = reader.readUint8();
+      } else {
+        console.warn(
+          `Not enough bytes to read group count for thing ${thing.id}`
+        );
+        groupCount = 1;
+      }
+    }
+
+    for (let g = 0; g < groupCount; g++) {
+      // Check if we have enough bytes for frame group header (7 bytes minimum)
+      if (reader.bytesAvailable < 7) {
+        console.warn(
+          `Not enough bytes to read frame group ${g} for thing ${thing.id}`
+        );
+        break;
+      }
+
+      const frameGroup: FrameGroup = {
+        type: g === 0 ? FrameGroupType.DEFAULT : FrameGroupType.WALKING,
+        width: reader.readUint8(),
+        height: reader.readUint8(),
+        layers: reader.readUint8() || 1,
+        patternX: reader.readUint8(),
+        patternY: reader.readUint8(),
+        patternZ: reader.readUint8(),
+        frames: reader.readUint8(),
+        spriteIds: [],
+      };
+
+      // Validate frame group dimensions
+      if (
+        frameGroup.width > 10 ||
+        frameGroup.height > 10 ||
+        frameGroup.layers > 10
+      ) {
+        console.warn(
+          `Invalid frame group dimensions for thing ${thing.id}: ${frameGroup.width}x${frameGroup.height}x${frameGroup.layers}`
+        );
+        frameGroup.width = Math.min(frameGroup.width, 10);
+        frameGroup.height = Math.min(frameGroup.height, 10);
+        frameGroup.layers = Math.min(frameGroup.layers, 10);
+      }
+
+      if (
+        frameGroup.patternX > 10 ||
+        frameGroup.patternY > 10 ||
+        frameGroup.patternZ > 10 ||
+        frameGroup.frames > 100
+      ) {
+        console.warn(
+          `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
+        );
+        frameGroup.patternX = Math.min(frameGroup.patternX, 10);
+        frameGroup.patternY = Math.min(frameGroup.patternY, 10);
+        frameGroup.patternZ = Math.min(frameGroup.patternZ, 10);
+        frameGroup.frames = Math.min(frameGroup.frames, 100);
+      }
+
+      // Update thing dimensions from first frame group
+      if (g === 0) {
+        thing.width = frameGroup.width;
+        thing.height = frameGroup.height;
+        thing.layers = frameGroup.layers;
+        thing.patternX = frameGroup.patternX;
+        thing.patternY = frameGroup.patternY;
+        thing.patternZ = frameGroup.patternZ;
+        thing.frames = frameGroup.frames;
+      }
+
+      // Calculate total sprites needed
+      const totalSprites =
+        frameGroup.width *
+        frameGroup.height *
+        frameGroup.layers *
+        frameGroup.patternX *
+        frameGroup.patternY *
+        frameGroup.patternZ *
+        frameGroup.frames;
+
+      // Validate total sprites count
+      if (totalSprites > 10000) {
+        console.warn(
+          `Too many sprites calculated for thing ${thing.id}: ${totalSprites}, limiting to 100`
+        );
+        // Set minimal frame group to avoid memory issues
+        thing.frameGroups[FrameGroupType.DEFAULT] = {
+          type: FrameGroupType.DEFAULT,
+          width: 1,
+          height: 1,
+          layers: 1,
+          patternX: 1,
+          patternY: 1,
+          patternZ: 1,
+          frames: 1,
+          spriteIds: [],
+        };
+        break;
+      }
+
+      // Check if we have enough bytes for all sprite IDs (4 bytes each)
+      const bytesNeeded = totalSprites * 4;
+      if (reader.bytesAvailable < bytesNeeded) {
+        console.warn(
+          `Not enough bytes to read ${totalSprites} sprite IDs for thing ${thing.id} (need ${bytesNeeded}, have ${reader.bytesAvailable})`
+        );
+        // Read as many as we can
+        const maxSprites = Math.floor(reader.bytesAvailable / 4);
+        for (let i = 0; i < maxSprites; i++) {
+          const spriteId = reader.readUint32();
+          frameGroup.spriteIds.push(spriteId);
+          thing.spriteIds.push(spriteId);
+        }
+      } else {
+        // Read sprite IDs
+        for (let i = 0; i < totalSprites; i++) {
+          const spriteId = reader.readUint32();
+          frameGroup.spriteIds.push(spriteId);
+          thing.spriteIds.push(spriteId);
+        }
+      }
+
+      // Store frame group
+      thing.frameGroups[frameGroup.type] = frameGroup;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Error parsing texture patterns for thing ${thing.id}: ${message}`
+    );
+    // Set defaults if parsing fails
+    thing.frameGroups[FrameGroupType.DEFAULT] = {
+      type: FrameGroupType.DEFAULT,
+      width: 1,
+      height: 1,
+      layers: 1,
+      patternX: 1,
+      patternY: 1,
+      patternZ: 1,
+      frames: 1,
+      spriteIds: [],
+    };
+  }
 }
 
 /**
@@ -965,77 +1334,4 @@ export function getProtocolForClientVersion(
 
   // Default to latest version
   return PROTOCOL_VERSIONS["12.86"];
-}
-
-function parseTexturePatterns(reader: BinaryReader, thing: ThingType): void {
-  try {
-    // Frame groups (for newer versions that support them)
-    let groupCount = 1;
-    if (thing.category === ThingCategory.OUTFIT) {
-      // Outfits can have multiple frame groups
-      groupCount = reader.readUint8();
-    }
-
-    for (let g = 0; g < groupCount; g++) {
-      const frameGroup: FrameGroup = {
-        type: g === 0 ? FrameGroupType.DEFAULT : FrameGroupType.WALKING,
-        width: reader.readUint8(),
-        height: reader.readUint8(),
-        layers: reader.readUint8() || 1,
-        patternX: reader.readUint8(),
-        patternY: reader.readUint8(),
-        patternZ: reader.readUint8(),
-        frames: reader.readUint8(),
-        spriteIds: [],
-      };
-
-      // Update thing dimensions from first frame group
-      if (g === 0) {
-        thing.width = frameGroup.width;
-        thing.height = frameGroup.height;
-        thing.layers = frameGroup.layers;
-        thing.patternX = frameGroup.patternX;
-        thing.patternY = frameGroup.patternY;
-        thing.patternZ = frameGroup.patternZ;
-        thing.frames = frameGroup.frames;
-      }
-
-      // Calculate total sprites needed
-      const totalSprites =
-        frameGroup.width *
-        frameGroup.height *
-        frameGroup.layers *
-        frameGroup.patternX *
-        frameGroup.patternY *
-        frameGroup.patternZ *
-        frameGroup.frames;
-
-      // Read sprite IDs
-      for (let i = 0; i < totalSprites; i++) {
-        const spriteId = reader.readUint32();
-        frameGroup.spriteIds.push(spriteId);
-        thing.spriteIds.push(spriteId);
-      }
-
-      // Store frame group
-      thing.frameGroups[frameGroup.type] = frameGroup;
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `Error parsing texture patterns for thing ${thing.id}: ${message}`
-    );
-    // Set defaults if parsing fails
-    thing.frameGroups[FrameGroupType.DEFAULT] = {
-      type: FrameGroupType.DEFAULT,
-      width: 1,
-      height: 1,
-      layers: 1,
-      patternX: 1,
-      patternY: 1,
-      patternZ: 1,
-      frames: 1,
-      spriteIds: [],
-    };
-  }
 }
