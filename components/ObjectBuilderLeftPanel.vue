@@ -1,325 +1,505 @@
 <template>
-  <div class="h-full flex flex-col bg-gray-50 border-r border-gray-200">
-    <!-- Project Info -->
-    <div class="p-4 border-b border-gray-200 bg-white">
-      <h2 class="text-lg font-semibold text-gray-900 mb-2">Project Info</h2>
-      <div class="space-y-2 text-sm">
+  <div class="flex flex-col h-full bg-gray-50 border-r border-gray-200">
+    <!-- Project Info Header -->
+    <div class="p-4 bg-white border-b border-gray-200 shadow-sm">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-gray-900">Project</h2>
+        <UBadge :color="projectLoaded ? 'success' : 'neutral'" variant="subtle">
+          {{ projectLoaded ? "Loaded" : "No Project" }}
+        </UBadge>
+      </div>
+
+      <div v-if="projectLoaded" class="space-y-2 text-sm">
         <div class="flex justify-between">
           <span class="text-gray-600">Protocol:</span>
-          <span class="font-medium text-blue-600">{{
-            projectState.protocol
+          <span class="font-medium">{{
+            currentProtocol?.version || "Unknown"
           }}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-gray-600">Client Version:</span>
-          <span class="font-medium">{{ projectState.clientVersion }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-600">Items:</span>
-          <span class="font-medium text-green-600">{{ getItems.length }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-600">Outfits:</span>
-          <span
-            class="font-medium"
-            :class="getOutfits.length > 0 ? 'text-blue-600' : 'text-red-600'"
-          >
-            {{ getOutfits.length
-            }}{{ getOutfits.length === 0 ? " (FAILED)" : "" }}
-          </span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-600">Effects:</span>
-          <span
-            class="font-medium"
-            :class="getEffects.length > 0 ? 'text-purple-600' : 'text-red-600'"
-          >
-            {{ getEffects.length
-            }}{{ getEffects.length === 0 ? " (FAILED)" : "" }}
-          </span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-600">Missiles:</span>
-          <span
-            class="font-medium"
-            :class="getMissiles.length > 0 ? 'text-red-600' : 'text-red-600'"
-          >
-            {{ getMissiles.length
-            }}{{ getMissiles.length === 0 ? " (FAILED)" : "" }}
-          </span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-600">Sprites:</span>
-          <span class="font-medium text-gray-600">{{
-            getSprites.length.toLocaleString()
+          <span class="text-gray-600">Client:</span>
+          <span class="font-medium">{{
+            currentProtocol?.clientVersionMin || "Unknown"
           }}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <div class="text-center p-2 bg-blue-50 rounded">
+            <div class="text-lg font-bold text-blue-600">{{ totalItems }}</div>
+            <div class="text-xs text-blue-500">Items</div>
+          </div>
+          <div class="text-center p-2 bg-green-50 rounded">
+            <div class="text-lg font-bold text-green-600">
+              {{ totalOutfits }}
+            </div>
+            <div class="text-xs text-green-500">Outfits</div>
+          </div>
+          <div class="text-center p-2 bg-purple-50 rounded">
+            <div class="text-lg font-bold text-purple-600">
+              {{ totalEffects }}
+            </div>
+            <div class="text-xs text-purple-500">Effects</div>
+          </div>
+          <div class="text-center p-2 bg-orange-50 rounded">
+            <div class="text-lg font-bold text-orange-600">
+              {{ totalMissiles }}
+            </div>
+            <div class="text-xs text-orange-500">Missiles</div>
+          </div>
         </div>
       </div>
+    </div>
 
-      <!-- Debug Info Toggle -->
-      <div class="mt-3">
+    <!-- Object Type Tabs -->
+    <div v-if="projectLoaded" class="bg-white border-b border-gray-200">
+      <div class="flex">
         <button
-          @click="showDebugInfo = !showDebugInfo"
-          class="text-xs text-gray-500 hover:text-gray-700 underline"
+          v-for="tab in objectTabs"
+          :key="tab.key"
+          @click="activeTab = tab.key"
+          :class="[
+            'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+            activeTab === tab.key
+              ? 'border-blue-500 text-blue-600 bg-blue-50'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+          ]"
         >
-          {{ showDebugInfo ? "Hide" : "Show" }} Debug Info
+          <div class="flex items-center justify-center space-x-1">
+            <component :is="tab.icon" class="w-4 h-4" />
+            <span>{{ tab.label }}</span>
+          </div>
         </button>
-      </div>
-
-      <!-- Debug Info -->
-      <div v-if="showDebugInfo" class="mt-3 p-3 bg-gray-50 rounded text-xs">
-        <div class="space-y-1">
-          <div>
-            <strong>Protocol Detection:</strong> {{ projectState.protocol }}
-          </div>
-          <div>
-            <strong>Has Frame Groups:</strong>
-            {{ protocolInfo?.hasFrameGroups ? "Yes" : "No" }}
-          </div>
-          <div class="mt-2">
-            <strong>Parsing Issues:</strong>
-            <div v-if="getOutfits.length === 0" class="text-red-600">
-              • Outfits: All failed to parse
-            </div>
-            <div v-if="getEffects.length === 0" class="text-red-600">
-              • Effects: All failed to parse
-            </div>
-            <div v-if="getMissiles.length === 0" class="text-red-600">
-              • Missiles: All failed to parse
-            </div>
-            <div
-              v-if="
-                getOutfits.length > 0 &&
-                getEffects.length > 0 &&
-                getMissiles.length > 0
-              "
-              class="text-green-600"
-            >
-              • All categories parsed successfully
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Category Tabs -->
-    <div class="flex border-b border-gray-200 bg-white">
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        @click="activeTab = tab.id"
-        class="flex-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors"
-        :class="
-          activeTab === tab.id
-            ? 'border-blue-500 text-blue-600 bg-blue-50'
-            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-        "
-      >
-        {{ tab.name }} ({{ tab.count }})
-      </button>
-    </div>
-
-    <!-- Search -->
-    <div class="p-3 border-b border-gray-200 bg-white">
-      <div class="relative">
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search by ID or name..."
-          class="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        />
-        <span class="absolute left-2.5 top-2.5 text-gray-400">🔍</span>
       </div>
     </div>
 
     <!-- Object List -->
-    <div class="flex-1 overflow-y-auto">
-      <div class="p-2 space-y-1">
-        <div
-          v-for="item in filteredItems"
-          :key="item.id"
-          @click="selectItem(item)"
-          class="p-3 rounded-lg cursor-pointer transition-colors border"
-          :class="
-            selectedItem?.id === item.id
-              ? 'bg-blue-100 border-blue-300'
-              : 'bg-white border-gray-200 hover:bg-gray-50'
-          "
-        >
-          <div class="flex items-center justify-between">
-            <div class="flex-1">
-              <div class="flex items-center space-x-2">
-                <span class="text-sm font-medium text-gray-900"
-                  >ID: {{ item.id }}</span
-                >
-                <span
-                  class="text-xs px-2 py-1 rounded"
-                  :class="getCategoryBadgeClass(item.category)"
-                >
-                  {{ item.category }}
-                </span>
-              </div>
-              <div class="mt-1 text-xs text-gray-600">
-                Size: {{ item.width }}x{{ item.height }}
-                <span v-if="item.layers && item.layers > 1"
-                  >x{{ item.layers }}</span
-                >
-                <span v-if="item.frames && item.frames > 1">
-                  | {{ item.frames }} frames</span
-                >
-              </div>
-              <!-- Properties -->
-              <div
-                v-if="getItemProperties(item).length > 0"
-                class="mt-1 flex flex-wrap gap-1"
-              >
-                <span
-                  v-for="prop in getItemProperties(item).slice(0, 3)"
-                  :key="prop"
-                  class="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded"
-                >
-                  {{ prop }}
-                </span>
-                <span
-                  v-if="getItemProperties(item).length > 3"
-                  class="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded"
-                >
-                  +{{ getItemProperties(item).length - 3 }}
-                </span>
-              </div>
-            </div>
-            <div class="ml-2 w-8 h-8 bg-gray-100 rounded border">
-              <!-- Sprite preview placeholder -->
-              <div
-                class="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 rounded"
-              ></div>
-            </div>
+    <div v-if="projectLoaded" class="flex-1 flex flex-col overflow-hidden">
+      <!-- List Header with pagination -->
+      <div class="p-3 bg-white border-b border-gray-200">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-medium text-gray-900">
+            {{ currentTabData.label }}
+            <span class="text-gray-500">({{ currentTabData.total }})</span>
+          </h3>
+          <div class="text-xs text-gray-500">
+            Page {{ currentTabData.currentPage }} of
+            {{ currentTabData.totalPages }}
           </div>
         </div>
 
-        <!-- Loading state -->
-        <div
-          v-if="!projectState.isLoaded"
-          class="p-4 text-center text-gray-500"
-        >
-          <div class="text-sm">No project loaded</div>
-          <div class="text-xs mt-1">Use "Open Folder" to load Tibia files</div>
+        <!-- Pagination Controls -->
+        <div class="flex items-center justify-between">
+          <UButton
+            @click="goToPreviousPage"
+            :disabled="currentTabData.currentPage <= 1"
+            size="xs"
+            variant="outline"
+            icon="i-heroicons-chevron-left"
+          >
+            Previous
+          </UButton>
+
+          <div class="flex space-x-1">
+            <input
+              v-model.number="pageInput"
+              @keyup.enter="goToPage(pageInput)"
+              type="number"
+              :min="1"
+              :max="currentTabData.totalPages"
+              class="w-16 px-2 py-1 text-xs border border-gray-300 rounded text-center"
+              :placeholder="currentTabData.currentPage.toString()"
+            />
+            <UButton @click="goToPage(pageInput)" size="xs" variant="outline">
+              Go
+            </UButton>
+          </div>
+
+          <UButton
+            @click="goToNextPage"
+            :disabled="currentTabData.currentPage >= currentTabData.totalPages"
+            size="xs"
+            variant="outline"
+            icon="i-heroicons-chevron-right"
+            trailing
+          >
+            Next
+          </UButton>
+        </div>
+      </div>
+
+      <!-- Object Grid -->
+      <div class="flex-1 overflow-y-auto p-3">
+        <div class="grid grid-cols-4 gap-2">
+          <div
+            v-for="object in currentTabData.items"
+            :key="`${activeTab}-${object.id}`"
+            @click="selectObject(object, activeTab)"
+            :class="[
+              'relative aspect-square border-2 rounded-lg cursor-pointer transition-all hover:shadow-md',
+              selectedObject?.id === object.id &&
+              selectedObjectType === activeTab
+                ? 'border-blue-500 bg-blue-50 shadow-md'
+                : 'border-gray-200 hover:border-gray-300',
+            ]"
+          >
+            <!-- Object Preview -->
+            <div
+              class="absolute inset-1 bg-gray-100 rounded flex items-center justify-center"
+            >
+              <div v-if="getObjectPreview(object)" class="w-8 h-8">
+                <img
+                  :src="getObjectPreview(object) || undefined"
+                  :alt="`${activeTab} ${object.id}`"
+                  class="w-full h-full object-contain pixelated"
+                />
+              </div>
+              <div
+                v-else
+                class="w-8 h-8 bg-gray-300 rounded flex items-center justify-center"
+              >
+                <span class="text-xs text-gray-500">{{ object.id }}</span>
+              </div>
+            </div>
+
+            <!-- Object ID -->
+            <div
+              class="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-1 py-0.5 rounded-b"
+            >
+              {{ object.id }}
+            </div>
+          </div>
         </div>
 
         <!-- Empty state -->
-        <div
-          v-else-if="filteredItems.length === 0"
-          class="p-4 text-center text-gray-500"
-        >
-          <div class="text-sm" v-if="searchQuery">
-            No items match your search
-          </div>
-          <div class="text-sm" v-else>No {{ activeTab }} loaded</div>
+        <div v-if="currentTabData.items.length === 0" class="text-center py-8">
+          <div class="text-gray-400 text-sm">No {{ activeTab }}s found</div>
         </div>
+      </div>
+    </div>
+
+    <!-- No Project State -->
+    <div v-else class="flex-1 flex items-center justify-center p-4">
+      <div class="text-center text-gray-500">
+        <div class="text-lg font-medium mb-2">No Project Loaded</div>
+        <div class="text-sm">Load DAT and SPR files to browse objects</div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ThingType } from "~/types/tibia";
-import { ThingCategory } from "~/types/tibia";
-
-// Emits
-const emit = defineEmits<{
-  "item-selected": [item: ThingType];
-}>();
+import { computed, ref, watch, onMounted } from "vue";
 
 const {
+  // Project state
   projectState,
-  getItems,
-  getOutfits,
-  getEffects,
-  getMissiles,
-  getSprites,
-  protocolInfo,
+  protocols,
+
+  // Data counts
+  totalItems,
+  totalOutfits,
+  totalEffects,
+  totalMissiles,
+
+  // Paginated data
+  paginatedItems,
+  paginatedOutfits,
+  paginatedEffects,
+  paginatedMissiles,
+
+  // Current pages
+  currentItemPage,
+  currentOutfitPage,
+  currentEffectPage,
+  currentMissilePage,
+
+  // Total pages
+  totalItemPages,
+  totalOutfitPages,
+  totalEffectPages,
+  totalMissilePages,
+
+  // Navigation
+  goToItemPage,
+  goToOutfitPage,
+  goToEffectPage,
+  goToMissilePage,
+
+  // Selection
+  selectedObject,
+  selectedObjectType,
+  selectObject,
+  getSpriteImageData,
 } = useTibiaFiles();
 
-const activeTab = ref("items");
-const searchQuery = ref("");
-const selectedItem = ref<ThingType | null>(null);
-const showDebugInfo = ref(false);
+// Active tab
+const activeTab = ref<"item" | "outfit" | "effect" | "missile">("item");
 
-const tabs = computed(() => [
-  { id: "items", name: "Items", count: getItems.value.length },
-  { id: "outfits", name: "Outfits", count: getOutfits.value.length },
-  { id: "effects", name: "Effects", count: getEffects.value.length },
-  { id: "missiles", name: "Missiles", count: getMissiles.value.length },
-]);
+// Page input for quick navigation
+const pageInput = ref(1);
 
-const currentItems = computed(() => {
+// Object type tabs configuration
+const objectTabs = [
+  { key: "item", label: "Items", icon: "i-heroicons-cube" },
+  { key: "outfit", label: "Outfits", icon: "i-heroicons-user" },
+  { key: "effect", label: "Effects", icon: "i-heroicons-sparkles" },
+  { key: "missile", label: "Missiles", icon: "i-heroicons-arrow-right" },
+] as const;
+
+// Computed properties
+const projectLoaded = computed(() => projectState.isLoaded);
+const currentProtocol = computed(
+  () => protocols[projectState.protocol] || null
+);
+
+// Current tab data computed
+const currentTabData = computed(() => {
   switch (activeTab.value) {
-    case "items":
-      return getItems.value;
-    case "outfits":
-      return getOutfits.value;
-    case "effects":
-      return getEffects.value;
-    case "missiles":
-      return getMissiles.value;
-    default:
-      return [];
+    case "item":
+      return {
+        label: "Items",
+        items: paginatedItems.value,
+        currentPage: currentItemPage.value,
+        totalPages: totalItemPages.value,
+        total: totalItems.value,
+      };
+    case "outfit":
+      return {
+        label: "Outfits",
+        items: paginatedOutfits.value,
+        currentPage: currentOutfitPage.value,
+        totalPages: totalOutfitPages.value,
+        total: totalOutfits.value,
+      };
+    case "effect":
+      return {
+        label: "Effects",
+        items: paginatedEffects.value,
+        currentPage: currentEffectPage.value,
+        totalPages: totalEffectPages.value,
+        total: totalEffects.value,
+      };
+    case "missile":
+      return {
+        label: "Missiles",
+        items: paginatedMissiles.value,
+        currentPage: currentMissilePage.value,
+        totalPages: totalMissilePages.value,
+        total: totalMissiles.value,
+      };
   }
 });
 
-const filteredItems = computed(() => {
-  if (!searchQuery.value) {
-    return currentItems.value.slice(0, 500); // Limit for performance
-  }
+// Debug: Log when data changes (moved after currentTabData definition)
+watch(
+  () => projectState.isLoaded,
+  (newVal) => {
+    console.log("🔄 Left Panel - Project state changed:", {
+      isLoaded: newVal,
+      datFile: !!projectState.datFile,
+      sprFile: !!projectState.sprFile,
+      loadedFiles: projectState.loadedFiles,
+      items: projectState.datFile?.items?.length || 0,
+      outfits: projectState.datFile?.outfits?.length || 0,
+      sprites: projectState.sprFile?.sprites?.length || 0,
+    });
 
-  const query = searchQuery.value.toLowerCase();
-  return currentItems.value
-    .filter((item) => {
-      return (
-        item.id.toString().includes(query) ||
-        (item.marketName && item.marketName.toLowerCase().includes(query))
-      );
-    })
-    .slice(0, 100); // Limit search results
+    if (newVal) {
+      console.log("🔄 Left Panel - Project loaded:", {
+        items: totalItems.value,
+        outfits: totalOutfits.value,
+        effects: totalEffects.value,
+        missiles: totalMissiles.value,
+      });
+    }
+  }
+);
+
+watch(
+  () => currentTabData.value,
+  (newData) => {
+    console.log(`🔄 Left Panel - Tab data changed for ${activeTab.value}:`, {
+      total: newData.total,
+      currentPage: newData.currentPage,
+      itemsOnPage: newData.items.length,
+    });
+  }
+);
+
+// Additional debug watchers
+watch(
+  () => projectState.datFile,
+  (datFile) => {
+    console.log("🔄 Left Panel - DAT file changed:", {
+      exists: !!datFile,
+      items: datFile?.items?.length || 0,
+      outfits: datFile?.outfits?.length || 0,
+      effects: datFile?.effects?.length || 0,
+      missiles: datFile?.missiles?.length || 0,
+    });
+  }
+);
+
+watch(
+  () => projectState.sprFile,
+  (sprFile) => {
+    console.log("🔄 Left Panel - SPR file changed:", {
+      exists: !!sprFile,
+      sprites: sprFile?.sprites?.length || 0,
+    });
+  }
+);
+
+// Log computed values changes
+watch(projectLoaded, (loaded) => {
+  console.log("🔄 Left Panel - projectLoaded computed changed:", loaded);
 });
 
-const selectItem = (item: ThingType) => {
-  selectedItem.value = item;
-  emit("item-selected", item);
-  console.log("Selected item:", item);
-};
+watch(totalItems, (total) => {
+  console.log("🔄 Left Panel - totalItems computed changed:", total);
+});
 
-const getCategoryBadgeClass = (category: ThingCategory) => {
-  switch (category) {
-    case ThingCategory.ITEM:
-      return "bg-green-100 text-green-800";
-    case ThingCategory.OUTFIT:
-      return "bg-blue-100 text-blue-800";
-    case ThingCategory.EFFECT:
-      return "bg-purple-100 text-purple-800";
-    case ThingCategory.MISSILE:
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
+// Debug on mount
+onMounted(() => {
+  console.log("🔄 Left Panel - Component mounted, current state:", {
+    projectLoaded: projectLoaded.value,
+    isLoaded: projectState.isLoaded,
+    datFile: !!projectState.datFile,
+    sprFile: !!projectState.sprFile,
+    loadedFiles: projectState.loadedFiles,
+    items: totalItems.value,
+    outfits: totalOutfits.value,
+    effects: totalEffects.value,
+    missiles: totalMissiles.value,
+  });
+
+  if (process.client) {
+    const style = document.createElement("style");
+    style.textContent = `
+      .pixelated {
+        image-rendering: -moz-crisp-edges;
+        image-rendering: -webkit-crisp-edges;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+});
+
+// Navigation functions
+const goToPreviousPage = () => {
+  const currentPage = currentTabData.value.currentPage;
+  if (currentPage > 1) {
+    goToCurrentTabPage(currentPage - 1);
   }
 };
 
-const getItemProperties = (item: ThingType): string[] => {
-  const props: string[] = [];
-
-  if (item.isGround) props.push("Ground");
-  if (item.isContainer) props.push("Container");
-  if (item.stackable) props.push("Stackable");
-  if (item.pickupable) props.push("Pickupable");
-  if (item.hasLight) props.push("Light");
-  if (item.isMarketItem) props.push("Marketable");
-  if (item.writable) props.push("Writable");
-  if (item.isFluidContainer) props.push("Fluid Container");
-  if (item.hasOffset) props.push("Offset");
-  if (item.rotatable) props.push("Rotatable");
-  if (item.hangable) props.push("Hangable");
-  if (item.frames && item.frames > 1) props.push("Animated");
-
-  return props;
+const goToNextPage = () => {
+  const currentPage = currentTabData.value.currentPage;
+  const totalPages = currentTabData.value.totalPages;
+  if (currentPage < totalPages) {
+    goToCurrentTabPage(currentPage + 1);
+  }
 };
+
+const goToPage = (page: number) => {
+  if (page >= 1 && page <= currentTabData.value.totalPages) {
+    goToCurrentTabPage(page);
+  }
+};
+
+const goToCurrentTabPage = (page: number) => {
+  switch (activeTab.value) {
+    case "item":
+      goToItemPage(page);
+      break;
+    case "outfit":
+      goToOutfitPage(page);
+      break;
+    case "effect":
+      goToEffectPage(page);
+      break;
+    case "missile":
+      goToMissilePage(page);
+      break;
+  }
+};
+
+// Get object preview image
+const getObjectPreview = (object: any): string | null => {
+  if (!object) {
+    console.log("🖼️ getObjectPreview: No object provided");
+    return null;
+  }
+
+  // Log first few objects for debugging
+  if (object.id <= 5) {
+    console.log(
+      `🖼️ getObjectPreview: Processing ${activeTab.value} ${object.id}`,
+      {
+        spriteIds: object.spriteIds?.slice(0, 3),
+        frameGroups: Object.keys(object.frameGroups || {}),
+        hasFrameGroups: !!object.frameGroups,
+      }
+    );
+  }
+
+  // Get the first sprite ID from the object
+  if (object.spriteIds && object.spriteIds.length > 0) {
+    const spriteId = object.spriteIds[0];
+    if (spriteId > 0 && spriteId < 1000000) {
+      const preview = getSpriteImageData(spriteId);
+      if (object.id <= 5) {
+        console.log(
+          `🖼️ getObjectPreview: Using spriteIds[0]=${spriteId} for ${
+            activeTab.value
+          } ${object.id}, preview: ${preview ? "found" : "null"}`
+        );
+      }
+      return preview;
+    }
+  }
+
+  // Try to get from frame groups
+  if (object.frameGroups) {
+    for (const [groupType, frameGroup] of Object.entries(
+      object.frameGroups
+    ) as [string, any][]) {
+      if (
+        frameGroup &&
+        frameGroup.spriteIds &&
+        frameGroup.spriteIds.length > 0
+      ) {
+        const spriteId = frameGroup.spriteIds[0];
+        if (spriteId > 0 && spriteId < 1000000) {
+          const preview = getSpriteImageData(spriteId);
+          if (object.id <= 5) {
+            console.log(
+              `🖼️ getObjectPreview: Using frameGroup[${groupType}].spriteIds[0]=${spriteId} for ${
+                activeTab.value
+              } ${object.id}, preview: ${preview ? "found" : "null"}`
+            );
+          }
+          return preview;
+        }
+      }
+    }
+  }
+
+  if (object.id <= 5) {
+    console.log(
+      `🖼️ getObjectPreview: No valid sprite found for ${activeTab.value} ${object.id}`
+    );
+  }
+
+  return null;
+};
+
+// Update page input when current page changes
+watch(
+  () => currentTabData.value.currentPage,
+  (newPage) => {
+    pageInput.value = newPage;
+  }
+);
 </script>

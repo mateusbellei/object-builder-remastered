@@ -344,9 +344,10 @@ export async function parseDatFile(
 
     for (let i = itemStart; i < itemEnd; i++) {
       const beforePosition = reader.currentPosition;
+      let thing: ThingType | null = null;
 
       try {
-        const thing = parseThingType(reader, i, ThingCategory.ITEM, protocol);
+        thing = parseThingType(reader, i, ThingCategory.ITEM, protocol);
         if (thing) {
           items.push(thing);
           successfulItems++;
@@ -354,7 +355,10 @@ export async function parseDatFile(
           failedItems++;
         }
       } catch (error) {
-        console.warn(`Failed to parse item ${i}:`, error);
+        console.warn(
+          `Failed to parse item ${i} at position ${reader.currentPosition}:`,
+          error
+        );
         failedItems++;
 
         // Check if error is due to unknown flag
@@ -362,10 +366,16 @@ export async function parseDatFile(
           unknownFlagItems++;
         }
 
-        // Continue with next item
+        // Try to recover by advancing position slightly
+        if (reader.bytesAvailable > 10) {
+          reader.currentPosition = beforePosition + 1;
+          console.log(
+            `🔧 Attempting recovery by advancing 1 byte for item ${i}`
+          );
+        }
       }
 
-      // Log position change for all items in debug mode
+      // Log position change for problematic items
       const afterPosition = reader.currentPosition;
       const bytesConsumed = afterPosition - beforePosition;
 
@@ -373,10 +383,13 @@ export async function parseDatFile(
         debugMode ||
         i <= 105 ||
         bytesConsumed === 0 ||
-        bytesConsumed > 1000
+        bytesConsumed > 1000 ||
+        failedItems > successfulItems / 10
       ) {
         console.log(
-          `📍 Item ${i}: pos ${beforePosition} → ${afterPosition} (${bytesConsumed} bytes)`
+          `📍 Item ${i}: pos ${beforePosition} → ${afterPosition} (${bytesConsumed} bytes) ${
+            thing ? "✅" : "❌"
+          }`
         );
       }
 
@@ -1620,7 +1633,7 @@ function parseTexturePatterns(
           frames: 1,
           spriteIds: [],
         };
-        continue;
+        return; // Exit early to prevent further corruption
       }
 
       if (
@@ -1637,39 +1650,24 @@ function parseTexturePatterns(
           `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
         );
 
-        // For effects and missiles with zero values, apply minimal corrections
-        if (
-          thing.category === ThingCategory.EFFECT ||
-          thing.category === ThingCategory.MISSILE
-        ) {
-          frameGroup.patternX =
-            frameGroup.patternX > 0 ? frameGroup.patternX : 1;
-          frameGroup.patternY =
-            frameGroup.patternY > 0 ? frameGroup.patternY : 1;
-          frameGroup.patternZ =
-            frameGroup.patternZ > 0 ? frameGroup.patternZ : 1;
-          frameGroup.frames = frameGroup.frames > 0 ? frameGroup.frames : 1;
+        // Stop parsing this thing entirely if data is corrupted
+        console.warn(
+          `Stopping parsing for ${thing.category} ${thing.id} due to corrupted data`
+        );
 
-          if (shouldLog) {
-            console.log(
-              `🔧 Corrected ${thing.category} ${thing.id} patterns to: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
-            );
-          }
-        } else {
-          // Create a minimal safe frame group with corrected values for other categories
-          thing.frameGroups[FrameGroupType.DEFAULT] = {
-            type: FrameGroupType.DEFAULT,
-            width: 1,
-            height: 1,
-            layers: 1,
-            patternX: frameGroup.patternX > 0 ? frameGroup.patternX : 1,
-            patternY: frameGroup.patternY > 0 ? frameGroup.patternY : 1,
-            patternZ: frameGroup.patternZ > 0 ? frameGroup.patternZ : 1,
-            frames: frameGroup.frames > 0 ? frameGroup.frames : 1,
-            spriteIds: [],
-          };
-          continue;
-        }
+        // Create a minimal safe frame group and exit
+        thing.frameGroups[FrameGroupType.DEFAULT] = {
+          type: FrameGroupType.DEFAULT,
+          width: 1,
+          height: 1,
+          layers: 1,
+          patternX: 1,
+          patternY: 1,
+          patternZ: 1,
+          frames: 1,
+          spriteIds: [],
+        };
+        return; // Exit early to prevent further corruption
       }
 
       // Update thing dimensions from first frame group
@@ -1733,6 +1731,12 @@ function parseTexturePatterns(
       const spriteIdSize = protocol.hasExtended ? 4 : 2;
       const bytesNeeded = totalSprites * spriteIdSize;
 
+      if (shouldLog) {
+        console.log(
+          `🎨 Reading sprite IDs: size=${spriteIdSize} bytes, total=${totalSprites}, protocol=${protocol.version}, extended=${protocol.hasExtended}`
+        );
+      }
+
       if (reader.bytesAvailable < bytesNeeded) {
         console.warn(
           `Not enough bytes to read ${totalSprites} sprite IDs for thing ${thing.id} (need ${bytesNeeded}, have ${reader.bytesAvailable})`
@@ -1743,17 +1747,47 @@ function parseTexturePatterns(
           const spriteId = protocol.hasExtended
             ? reader.readUint32()
             : reader.readUint16();
-          frameGroup.spriteIds.push(spriteId);
-          thing.spriteIds.push(spriteId);
+
+          // Validate sprite ID - should not be extremely large values
+          if (spriteId > 0 && spriteId < 1000000) {
+            frameGroup.spriteIds.push(spriteId);
+            thing.spriteIds.push(spriteId);
+          } else if (spriteId === 0) {
+            // Empty sprite ID is valid
+            frameGroup.spriteIds.push(0);
+            thing.spriteIds.push(0);
+          } else {
+            console.warn(
+              `Invalid sprite ID ${spriteId} for thing ${thing.id}, skipping`
+            );
+            // Push 0 as placeholder to maintain array size
+            frameGroup.spriteIds.push(0);
+            thing.spriteIds.push(0);
+          }
         }
       } else {
-        // Read sprite IDs with correct size
+        // Read sprite IDs with correct size and validation
         for (let i = 0; i < totalSprites; i++) {
           const spriteId = protocol.hasExtended
             ? reader.readUint32()
             : reader.readUint16();
-          frameGroup.spriteIds.push(spriteId);
-          thing.spriteIds.push(spriteId);
+
+          // Validate sprite ID - should not be extremely large values
+          if (spriteId > 0 && spriteId < 1000000) {
+            frameGroup.spriteIds.push(spriteId);
+            thing.spriteIds.push(spriteId);
+          } else if (spriteId === 0) {
+            // Empty sprite ID is valid
+            frameGroup.spriteIds.push(0);
+            thing.spriteIds.push(0);
+          } else {
+            console.warn(
+              `Invalid sprite ID ${spriteId} for thing ${thing.id} at position ${i}, using 0`
+            );
+            // Push 0 as placeholder
+            frameGroup.spriteIds.push(0);
+            thing.spriteIds.push(0);
+          }
         }
       }
 
@@ -1839,6 +1873,9 @@ export async function parseSprFile(file: File): Promise<SprFileData> {
     // Parse sprites
     const sprites: TibiaSprite[] = [];
     const spritePositions = [];
+    let successfulSprites = 0;
+    let emptySprites = 0;
+    let errorSprites = 0;
 
     for (let i = 1; i <= spriteCount; i++) {
       try {
@@ -1846,6 +1883,7 @@ export async function parseSprFile(file: File): Promise<SprFileData> {
         if (offset === 0) {
           // Empty sprite
           sprites.push(createEmptySprite(i));
+          emptySprites++;
           continue;
         }
 
@@ -1868,6 +1906,20 @@ export async function parseSprFile(file: File): Promise<SprFileData> {
         // Read compressed pixel data
         const compressedPixels = reader.readBytes(dataSize);
 
+        // Log first few sprites for debugging
+        if (i <= 5) {
+          console.log(`Sprite ${i} info:`, {
+            offset,
+            red,
+            green,
+            blue,
+            alpha,
+            dataSize,
+            hasTransparency,
+            compressedSize: compressedPixels.length,
+          });
+        }
+
         // Decompress sprite data
         const pixelData = decompressSprite(
           compressedPixels,
@@ -1888,11 +1940,21 @@ export async function parseSprFile(file: File): Promise<SprFileData> {
           bitmapData: null,
           isEmpty: dataSize === 0,
         });
+
+        successfulSprites++;
       } catch (error) {
         console.warn(`Error parsing sprite ${i}:`, error);
         sprites.push(createEmptySprite(i));
+        errorSprites++;
       }
     }
+
+    console.log("SPR parsing complete:", {
+      total: spriteCount,
+      successful: successfulSprites,
+      empty: emptySprites,
+      errors: errorSprites,
+    });
 
     return {
       signature,
@@ -1928,7 +1990,7 @@ function createEmptySprite(id: number): TibiaSprite {
 }
 
 /**
- * Decompress sprite data (simplified implementation)
+ * Decompress sprite data using Tibia's RLE compression
  */
 function decompressSprite(
   compressedData: Uint8Array,
@@ -1940,26 +2002,85 @@ function decompressSprite(
 ): Uint8Array {
   const pixelData = new Uint8Array(SPRITE_DATA_SIZE);
 
-  // This is a simplified decompression
-  // The actual implementation would need to handle Tibia's specific compression format
-  let srcOffset = 0;
-  let dstOffset = 0;
+  if (compressedData.length === 0) {
+    // Fill with transparent pixels
+    for (let i = 3; i < pixelData.length; i += 4) {
+      pixelData[i] = 0; // Alpha = 0 (transparent)
+    }
+    return pixelData;
+  }
 
-  // For now, just copy the data as-is (placeholder)
-  const channelSizes = [red, green, blue, alpha];
-  let channelOffset = 0;
+  try {
+    const channelSizes = [red, green, blue, hasTransparency ? alpha : 0];
+    let srcOffset = 0;
 
-  for (let channel = 0; channel < (hasTransparency ? 4 : 3); channel++) {
-    const channelSize = channelSizes[channel];
+    // Initialize all pixels to transparent/black
+    for (let i = 0; i < pixelData.length; i += 4) {
+      pixelData[i] = 0; // R
+      pixelData[i + 1] = 0; // G
+      pixelData[i + 2] = 0; // B
+      pixelData[i + 3] = hasTransparency ? 0 : 255; // A
+    }
 
-    for (let i = 0; i < channelSize && srcOffset < compressedData.length; i++) {
-      if (dstOffset + channel < pixelData.length) {
-        pixelData[dstOffset + channel] = compressedData[srcOffset];
+    // Process each color channel
+    for (let channel = 0; channel < (hasTransparency ? 4 : 3); channel++) {
+      const channelSize = channelSizes[channel];
+
+      if (channelSize === 0) continue;
+
+      let pixelIndex = 0;
+      let dataIndex = srcOffset;
+      const endIndex = srcOffset + channelSize;
+
+      // Decompress using RLE-like algorithm
+      while (
+        dataIndex < endIndex &&
+        dataIndex < compressedData.length &&
+        pixelIndex < SPRITE_SIZE * SPRITE_SIZE
+      ) {
+        const byte = compressedData[dataIndex++];
+
+        // Check if this is a run-length encoded sequence
+        if (byte === 0) {
+          // Skip transparent pixels - advance pixel index
+          if (dataIndex < endIndex && dataIndex < compressedData.length) {
+            const skipCount = compressedData[dataIndex++];
+            pixelIndex += skipCount;
+          }
+        } else {
+          // Direct pixel value
+          const pixelOffset = pixelIndex * 4 + channel;
+          if (pixelOffset < pixelData.length) {
+            pixelData[pixelOffset] = byte;
+          }
+          pixelIndex++;
+        }
       }
-      srcOffset++;
 
-      if ((i + 1) % (hasTransparency ? 4 : 3) === 0) {
-        dstOffset += 4;
+      srcOffset += channelSize;
+    }
+
+    // For non-transparent sprites, ensure alpha is 255
+    if (!hasTransparency) {
+      for (let i = 3; i < pixelData.length; i += 4) {
+        pixelData[i] = 255;
+      }
+    }
+  } catch (error) {
+    console.warn("Error decompressing sprite:", error);
+
+    // Return a debug pattern on error
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        const offset = (y * 32 + x) * 4;
+        if (offset + 3 < pixelData.length) {
+          // Create a checkerboard pattern for debugging
+          const isChecked = (Math.floor(x / 4) + Math.floor(y / 4)) % 2;
+          pixelData[offset] = isChecked ? 255 : 128; // R
+          pixelData[offset + 1] = isChecked ? 0 : 128; // G
+          pixelData[offset + 2] = isChecked ? 255 : 128; // B
+          pixelData[offset + 3] = 255; // A
+        }
       }
     }
   }

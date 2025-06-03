@@ -429,7 +429,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     version: "10.98",
     datSignature: 0x42a3,
     sprSignature: 0x57bbd603,
-    hasExtended: true,
+    hasExtended: false,
     hasFrameGroups: true,
     hasImprovedAnimations: true,
     hasPatternsZ: true,

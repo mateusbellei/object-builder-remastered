@@ -761,6 +761,236 @@ export const useTibiaFiles = () => {
     return PROTOCOL_VERSIONS[projectState.protocol] || null;
   });
 
+  // Pagination state
+  const currentSpritePage = ref(1);
+  const currentItemPage = ref(1);
+  const currentOutfitPage = ref(1);
+  const currentEffectPage = ref(1);
+  const currentMissilePage = ref(1);
+  const itemsPerPage = 100;
+
+  // Selected object for main canvas
+  const selectedObject = ref<any>(null);
+  const selectedObjectType = ref<
+    "item" | "outfit" | "effect" | "missile" | null
+  >(null);
+
+  // Computed properties for pagination
+  const paginatedSprites = computed(() => {
+    if (!projectState.sprFile?.sprites) return [];
+    const start = (currentSpritePage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return projectState.sprFile.sprites.slice(start, end);
+  });
+
+  const paginatedItems = computed(() => {
+    if (!projectState.datFile?.items) return [];
+    const start = (currentItemPage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return projectState.datFile.items.slice(start, end);
+  });
+
+  const paginatedOutfits = computed(() => {
+    if (!projectState.datFile?.outfits) return [];
+    const start = (currentOutfitPage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return projectState.datFile.outfits.slice(start, end);
+  });
+
+  const paginatedEffects = computed(() => {
+    if (!projectState.datFile?.effects) return [];
+    const start = (currentEffectPage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return projectState.datFile.effects.slice(start, end);
+  });
+
+  const paginatedMissiles = computed(() => {
+    if (!projectState.datFile?.missiles) return [];
+    const start = (currentMissilePage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return projectState.datFile.missiles.slice(start, end);
+  });
+
+  // Total pages
+  const totalSpritePages = computed(() => {
+    if (!projectState.sprFile?.sprites) return 0;
+    return Math.ceil(projectState.sprFile.sprites.length / itemsPerPage);
+  });
+
+  const totalItemPages = computed(() => {
+    if (!projectState.datFile?.items) return 0;
+    return Math.ceil(projectState.datFile.items.length / itemsPerPage);
+  });
+
+  const totalOutfitPages = computed(() => {
+    if (!projectState.datFile?.outfits) return 0;
+    return Math.ceil(projectState.datFile.outfits.length / itemsPerPage);
+  });
+
+  const totalEffectPages = computed(() => {
+    if (!projectState.datFile?.effects) return 0;
+    return Math.ceil(projectState.datFile.effects.length / itemsPerPage);
+  });
+
+  const totalMissilePages = computed(() => {
+    if (!projectState.datFile?.missiles) return 0;
+    return Math.ceil(projectState.datFile.missiles.length / itemsPerPage);
+  });
+
+  // Navigation functions
+  const goToSpritePage = (page: number) => {
+    if (page >= 1 && page <= totalSpritePages.value) {
+      currentSpritePage.value = page;
+    }
+  };
+
+  const goToItemPage = (page: number) => {
+    if (page >= 1 && page <= totalItemPages.value) {
+      currentItemPage.value = page;
+    }
+  };
+
+  const goToOutfitPage = (page: number) => {
+    if (page >= 1 && page <= totalOutfitPages.value) {
+      currentOutfitPage.value = page;
+    }
+  };
+
+  const goToEffectPage = (page: number) => {
+    if (page >= 1 && page <= totalEffectPages.value) {
+      currentEffectPage.value = page;
+    }
+  };
+
+  const goToMissilePage = (page: number) => {
+    if (page >= 1 && page <= totalMissilePages.value) {
+      currentMissilePage.value = page;
+    }
+  };
+
+  // Object selection
+  const selectObject = (
+    object: any,
+    type: "item" | "outfit" | "effect" | "missile"
+  ) => {
+    selectedObject.value = object;
+    selectedObjectType.value = type;
+    console.log(`🎯 Selected ${type} ${object.id}:`, object);
+  };
+
+  // Create test sprite for debugging
+  const createTestSprite = (id: number, color: string = "red"): string => {
+    // Only run on client side
+    if (typeof window === "undefined" || !process.client) {
+      return "";
+    }
+
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext("2d");
+
+      if (ctx) {
+        // Create a test pattern
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 32, 32);
+
+        // Add some pattern
+        ctx.fillStyle = "white";
+        ctx.fillRect(4, 4, 24, 24);
+
+        ctx.fillStyle = color;
+        ctx.fillRect(8, 8, 16, 16);
+
+        // Add sprite ID
+        ctx.fillStyle = "white";
+        ctx.font = "8px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(id.toString(), 16, 18);
+
+        return canvas.toDataURL();
+      }
+    } catch (error) {
+      console.warn(`Error creating test sprite ${id}:`, error);
+    }
+
+    return "";
+  };
+
+  // Get sprite data for rendering
+  const getSpriteImageData = (spriteId: number): string | null => {
+    // Only run on client side
+    if (typeof window === "undefined" || !process.client) {
+      return null;
+    }
+
+    if (!projectState.sprFile?.sprites) {
+      console.log("getSpriteImageData: No sprites loaded");
+      return null;
+    }
+
+    const sprite = projectState.sprFile.sprites.find((s) => s.id === spriteId);
+    if (!sprite) {
+      console.log(`getSpriteImageData: Sprite ${spriteId} not found`);
+      return null;
+    }
+
+    if (sprite.isEmpty) {
+      console.log(`getSpriteImageData: Sprite ${spriteId} is empty`);
+      // Return test sprite for empty sprites to see if rendering works
+      return createTestSprite(spriteId, "#cccccc");
+    }
+
+    // Convert sprite pixel data to data URL
+    if (sprite.pixelData && sprite.pixelData.length > 0) {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+
+        if (ctx) {
+          const imageData = ctx.createImageData(32, 32);
+
+          // Copy pixel data - ensure we have the right amount of data
+          const pixelCount = 32 * 32 * 4; // RGBA
+          if (sprite.pixelData.length >= pixelCount) {
+            imageData.data.set(sprite.pixelData.slice(0, pixelCount));
+          } else {
+            // Pad with transparent pixels if needed
+            const paddedData = new Uint8Array(pixelCount);
+            paddedData.set(sprite.pixelData);
+            imageData.data.set(paddedData);
+          }
+
+          ctx.putImageData(imageData, 0, 0);
+          const dataUrl = canvas.toDataURL();
+
+          // Log successful conversion for first few sprites
+          if (spriteId <= 5) {
+            console.log(
+              `getSpriteImageData: Successfully converted sprite ${spriteId}, data length: ${sprite.pixelData.length}`
+            );
+          }
+
+          return dataUrl;
+        }
+      } catch (error) {
+        console.warn(`Error converting sprite ${spriteId} to image:`, error);
+      }
+    } else {
+      console.log(
+        `getSpriteImageData: Sprite ${spriteId} has no pixel data (length: ${
+          sprite.pixelData?.length || 0
+        })`
+      );
+    }
+
+    // Fallback: create a placeholder image with the sprite ID
+    return createTestSprite(spriteId, "#ff6600");
+  };
+
   return {
     // Protocol and version info
     protocols: PROTOCOL_VERSIONS,
@@ -786,5 +1016,41 @@ export const useTibiaFiles = () => {
     // Utility operations
     generateSpriteSheet,
     importSpriteSheet,
+
+    // Pagination
+    currentSpritePage,
+    currentItemPage,
+    currentOutfitPage,
+    currentEffectPage,
+    currentMissilePage,
+    paginatedSprites,
+    paginatedItems,
+    paginatedOutfits,
+    paginatedEffects,
+    paginatedMissiles,
+    totalSpritePages,
+    totalItemPages,
+    totalOutfitPages,
+    totalEffectPages,
+    totalMissilePages,
+    goToSpritePage,
+    goToItemPage,
+    goToOutfitPage,
+    goToEffectPage,
+    goToMissilePage,
+
+    // Selection
+    selectedObject,
+    selectedObjectType,
+    selectObject,
+    getSpriteImageData,
+    createTestSprite,
+
+    // Data counts for display
+    totalSprites: computed(() => projectState.sprFile?.sprites?.length || 0),
+    totalItems: computed(() => projectState.datFile?.items?.length || 0),
+    totalOutfits: computed(() => projectState.datFile?.outfits?.length || 0),
+    totalEffects: computed(() => projectState.datFile?.effects?.length || 0),
+    totalMissiles: computed(() => projectState.datFile?.missiles?.length || 0),
   };
 };

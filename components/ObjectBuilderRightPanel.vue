@@ -1,298 +1,297 @@
 <template>
-  <div class="w-80 bg-white border-l border-gray-200 flex flex-col h-full">
-    <!-- Header -->
-    <div class="border-b border-gray-200 p-4">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="font-semibold text-gray-900">Sprite Manager</h3>
-        <div class="flex space-x-1">
-          <button
-            @click="importSprites"
-            class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-            :disabled="!projectState.isLoaded"
-          >
-            Import
-          </button>
-          <button
-            @click="addNewSprite"
-            class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
-            :disabled="!projectState.isLoaded"
-          >
-            Add
-          </button>
-        </div>
+  <div class="flex flex-col h-full bg-gray-50 border-l border-gray-200">
+    <!-- Sprites Header -->
+    <div class="p-4 bg-white border-b border-gray-200 shadow-sm">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-gray-900">Sprites</h2>
+        <UBadge :color="projectLoaded ? 'success' : 'neutral'" variant="subtle">
+          {{ projectLoaded ? totalSprites.toLocaleString() : "No Data" }}
+        </UBadge>
       </div>
 
-      <!-- Stats -->
-      <div class="text-sm text-gray-600">
-        <div>Total Sprites: {{ sprites.length }}</div>
-        <div v-if="selectedSprite">Selected: {{ selectedSprite.id }}</div>
+      <div v-if="projectLoaded" class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <span class="text-gray-600">Total Sprites:</span>
+          <span class="font-medium">{{ totalSprites.toLocaleString() }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Page:</span>
+          <span class="font-medium"
+            >{{ currentSpritePage }} / {{ totalSpritePages }}</span
+          >
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Range:</span>
+          <span class="font-medium">{{ spriteRangeText }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sprite Navigation -->
+    <div v-if="projectLoaded" class="p-3 bg-white border-b border-gray-200">
+      <div class="flex items-center justify-between mb-2">
+        <UButton
+          @click="goToPreviousSpritePage"
+          :disabled="currentSpritePage <= 1"
+          size="xs"
+          variant="outline"
+          icon="i-heroicons-chevron-left"
+        >
+          Previous
+        </UButton>
+
+        <div class="flex space-x-2 items-center">
+          <span class="text-xs text-gray-500">Go to:</span>
+          <input
+            v-model.number="spritePageInput"
+            @keyup.enter="goToSpritePage(spritePageInput)"
+            type="number"
+            :min="1"
+            :max="totalSpritePages"
+            class="w-20 px-2 py-1 text-xs border border-gray-300 rounded text-center"
+            :placeholder="currentSpritePage.toString()"
+          />
+          <UButton
+            @click="goToSpritePage(spritePageInput)"
+            size="xs"
+            variant="outline"
+          >
+            Go
+          </UButton>
+        </div>
+
+        <UButton
+          @click="goToNextSpritePage"
+          :disabled="currentSpritePage >= totalSpritePages"
+          size="xs"
+          variant="outline"
+          icon="i-heroicons-chevron-right"
+          trailing
+        >
+          Next
+        </UButton>
+      </div>
+
+      <!-- Quick Jump Buttons -->
+      <div class="flex space-x-1 justify-center">
+        <UButton
+          @click="goToSpritePage(1)"
+          size="xs"
+          variant="ghost"
+          :disabled="currentSpritePage === 1"
+        >
+          First
+        </UButton>
+        <UButton
+          @click="goToSpritePage(Math.max(1, currentSpritePage - 10))"
+          size="xs"
+          variant="ghost"
+        >
+          -10
+        </UButton>
+        <UButton
+          @click="
+            goToSpritePage(Math.min(totalSpritePages, currentSpritePage + 10))
+          "
+          size="xs"
+          variant="ghost"
+        >
+          +10
+        </UButton>
+        <UButton
+          @click="goToSpritePage(totalSpritePages)"
+          size="xs"
+          variant="ghost"
+          :disabled="currentSpritePage === totalSpritePages"
+        >
+          Last
+        </UButton>
       </div>
     </div>
 
     <!-- Sprite Grid -->
-    <div class="flex-1 overflow-y-auto p-4">
-      <div v-if="sprites.length > 0" class="grid grid-cols-4 gap-2">
+    <div v-if="projectLoaded" class="flex-1 overflow-y-auto p-3">
+      <div class="grid grid-cols-10 gap-1">
         <div
-          v-for="sprite in sprites.slice(0, 100)"
+          v-for="sprite in paginatedSprites"
           :key="sprite.id"
           @click="selectSprite(sprite)"
-          class="relative cursor-pointer border rounded hover:border-blue-400 transition-colors group"
-          :class="
-            selectedSprite?.id === sprite.id
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-200'
-          "
+          :class="[
+            'relative aspect-square border rounded cursor-pointer transition-all hover:shadow-sm',
+            selectedSpriteId === sprite.id
+              ? 'border-blue-500 bg-blue-50 shadow-sm'
+              : 'border-gray-200 hover:border-gray-300',
+          ]"
+          :title="`Sprite ID: ${sprite.id}`"
         >
-          <!-- Sprite Preview -->
-          <div class="w-16 h-16 bg-gray-100 flex items-center justify-center">
-            <canvas
-              :ref="(el: any) => { if (el) spriteCanvases[sprite.id] = el as HTMLCanvasElement }"
-              width="32"
-              height="32"
-              class="w-8 h-8 pixelated"
-            />
-          </div>
-
-          <!-- Sprite Info -->
-          <div class="p-1 text-xs text-center">
-            <div class="font-medium">{{ sprite.id }}</div>
-            <div class="text-gray-500">
-              {{ sprite.width }}x{{ sprite.height }}
+          <!-- Sprite Image -->
+          <div class="absolute inset-0.5 bg-gray-100 rounded overflow-hidden">
+            <div v-if="getSpriteImageData(sprite.id)" class="w-full h-full">
+              <img
+                :src="getSpriteImageData(sprite.id) || undefined"
+                :alt="`Sprite ${sprite.id}`"
+                class="w-full h-full object-contain pixelated"
+              />
+            </div>
+            <div
+              v-else
+              class="w-full h-full bg-gray-200 flex items-center justify-center"
+            >
+              <span class="text-xs text-gray-400">{{ sprite.id }}</span>
             </div>
           </div>
 
-          <!-- Hover Actions -->
+          <!-- Sprite ID overlay -->
           <div
-            class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 text-center"
           >
-            <button
-              @click.stop="exportSprite(sprite)"
-              class="text-white text-xs px-1 py-0.5 bg-blue-500 rounded mr-1 hover:bg-blue-600"
-            >
-              Export
-            </button>
-            <button
-              @click.stop="deleteSprite(sprite)"
-              class="text-white text-xs px-1 py-0.5 bg-red-500 rounded hover:bg-red-600"
-            >
-              Delete
-            </button>
+            {{ sprite.id }}
+          </div>
+
+          <!-- Empty sprite indicator -->
+          <div v-if="sprite.isEmpty" class="absolute top-0 right-0">
+            <div class="w-2 h-2 bg-red-500 rounded-full"></div>
           </div>
         </div>
       </div>
 
-      <!-- Empty State -->
-      <div v-else class="text-center py-12">
-        <div
-          class="w-12 h-12 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center"
-        >
-          <span class="text-gray-500 text-xl">🖼️</span>
-        </div>
-        <p class="text-sm text-gray-500 mb-2">No sprites loaded</p>
-        <p class="text-xs text-gray-600">
-          {{
-            projectState.isLoaded
-              ? "Load an SPR file to see sprites"
-              : "Open a project first"
-          }}
-        </p>
+      <!-- Empty state -->
+      <div v-if="paginatedSprites.length === 0" class="text-center py-8">
+        <div class="text-gray-400 text-sm">No sprites found</div>
       </div>
     </div>
 
-    <!-- Sprite Properties -->
-    <div class="border-t border-gray-200 p-4">
-      <h4 class="text-sm font-semibold text-gray-900 mb-3">Properties</h4>
-
-      <div v-if="selectedSprite" class="space-y-3 text-xs">
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-gray-600 mb-1">Width</label>
-            <input
-              v-model.number="selectedSprite.width"
-              type="number"
-              class="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-            />
-          </div>
-          <div>
-            <label class="block text-gray-600 mb-1">Height</label>
-            <input
-              v-model.number="selectedSprite.height"
-              type="number"
-              class="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-            />
-          </div>
+    <!-- Selected Sprite Info -->
+    <div
+      v-if="projectLoaded && selectedSprite"
+      class="p-4 bg-white border-t border-gray-200"
+    >
+      <h3 class="text-sm font-medium text-gray-900 mb-2">Sprite Info</h3>
+      <div class="space-y-1 text-xs">
+        <div class="flex justify-between">
+          <span class="text-gray-600">ID:</span>
+          <span class="font-medium">{{ selectedSprite.id }}</span>
         </div>
-
-        <div class="space-y-2">
-          <label class="flex items-center space-x-2">
-            <input
-              v-model="selectedSprite.transparent"
-              type="checkbox"
-              class="text-blue-500"
-            />
-            <span class="text-gray-600">Has Transparency</span>
-          </label>
-          <label class="flex items-center space-x-2">
-            <input
-              v-model="selectedSprite.isEmpty"
-              type="checkbox"
-              class="text-blue-500"
-            />
-            <span class="text-gray-600">Is Empty</span>
-          </label>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Size:</span>
+          <span class="font-medium"
+            >{{ selectedSprite.width }}x{{ selectedSprite.height }}</span
+          >
         </div>
-
-        <!-- Action Buttons -->
-        <div class="flex space-x-2 pt-2">
-          <button
-            @click="exportSprite(selectedSprite)"
-            class="flex-1 px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
+        <div class="flex justify-between">
+          <span class="text-gray-600">Transparent:</span>
+          <span class="font-medium">{{
+            selectedSprite.transparent ? "Yes" : "No"
+          }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Empty:</span>
+          <span class="font-medium">{{
+            selectedSprite.isEmpty ? "Yes" : "No"
+          }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Data Size:</span>
+          <span class="font-medium"
+            >{{ selectedSprite.compressedPixels?.length || 0 }} bytes</span
           >
-            Export
-          </button>
-          <button
-            @click="deleteSprite(selectedSprite)"
-            class="flex-1 px-3 py-1 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50"
-          >
-            Delete
-          </button>
         </div>
       </div>
+    </div>
 
-      <div v-else class="text-xs text-gray-500 text-center py-4">
-        No sprite selected
+    <!-- No Project State -->
+    <div v-else class="flex-1 flex items-center justify-center p-4">
+      <div class="text-center text-gray-500">
+        <div class="text-lg font-medium mb-2">No Sprites Loaded</div>
+        <div class="text-sm">Load SPR file to browse sprites</div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { TibiaSprite } from "~/types/tibia";
+import { computed, ref, watch, onMounted } from "vue";
 
-const { projectState, getSprites, importSpriteSheet } = useTibiaFiles();
+const {
+  // Project state
+  projectState,
 
-const selectedSprite = ref<TibiaSprite | null>(null);
-const spriteCanvases = ref<Record<number, HTMLCanvasElement>>({});
+  // Sprite data
+  paginatedSprites,
+  currentSpritePage,
+  totalSpritePages,
+  totalSprites,
+  goToSpritePage,
+  getSpriteImageData,
+} = useTibiaFiles();
 
-// Get sprites from the new system
-const sprites = computed(() => getSprites.value);
+// Selected sprite
+const selectedSpriteId = ref<number | null>(null);
+const spritePageInput = ref(1);
 
-const selectSprite = (sprite: TibiaSprite) => {
-  selectedSprite.value = sprite;
-  console.log("Selected sprite:", sprite);
-};
+// Computed properties
+const projectLoaded = computed(() => projectState.isLoaded);
 
-const importSprites = async () => {
-  try {
-    // TODO: Open file dialog for sprite sheet import
-    console.log("Importing sprites...");
-  } catch (error) {
-    console.error("Error importing sprites:", error);
-  }
-};
-
-const addNewSprite = () => {
-  const newId = Math.max(...sprites.value.map((s) => s.id), 0) + 1;
-  const newSprite: TibiaSprite = {
-    id: newId,
-    width: 32,
-    height: 32,
-    transparent: true,
-    compressedPixels: new Uint8Array(0),
-    pixelData: new Uint8Array(32 * 32 * 4),
-    bitmapData: null,
-    isEmpty: true,
-  };
-
-  // Note: This would need to be implemented in the composable
-  // For now, just select null to avoid errors
-  selectedSprite.value = null;
-  console.log("Would add new sprite:", newSprite);
-};
-
-const exportSprite = (sprite: TibiaSprite) => {
-  if (!sprite) return;
-  // TODO: Implement sprite export
-  console.log("Exporting sprite:", sprite);
-};
-
-const deleteSprite = (sprite: TibiaSprite) => {
-  if (!sprite) return;
-
-  // TODO: Implement sprite deletion in composable
-  console.log("Would delete sprite:", sprite);
-  selectedSprite.value = null;
-};
-
-// Generate placeholder sprite thumbnails
-const generatePlaceholderSprite = (
-  canvas: HTMLCanvasElement,
-  spriteId: number
-) => {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  // Create a simple pattern based on sprite ID
-  const colors = ["#8B5CF6", "#3B82F6", "#10B981", "#F59E0B", "#EF4444"];
-  const color = colors[spriteId % colors.length];
-
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 32, 32);
-
-  // Add some pattern
-  ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-  for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 4; j++) {
-      if ((i + j) % 2) {
-        ctx.fillRect(i * 8, j * 8, 8, 8);
-      }
-    }
-  }
-};
-
-onMounted(() => {
-  // Generate placeholder sprites after component is mounted
-  nextTick(() => {
-    sprites.value.forEach((sprite) => {
-      const canvas = spriteCanvases.value[sprite.id];
-      if (canvas) {
-        generatePlaceholderSprite(canvas, sprite.id);
-      }
-    });
-  });
+const selectedSprite = computed(() => {
+  if (!selectedSpriteId.value || !projectState.sprFile?.sprites) return null;
+  return (
+    projectState.sprFile.sprites.find((s) => s.id === selectedSpriteId.value) ||
+    null
+  );
 });
 
-// Watch for new sprites and generate their thumbnails
-watch(
-  sprites,
-  (newList) => {
-    nextTick(() => {
-      newList.forEach((sprite) => {
-        const canvas = spriteCanvases.value[sprite.id];
-        if (canvas && sprite.isEmpty) {
-          generatePlaceholderSprite(canvas, sprite.id);
-        }
-      });
-    });
-  },
-  { deep: true }
-);
+const spriteRangeText = computed(() => {
+  if (!projectLoaded.value || totalSprites.value === 0) return "N/A";
 
-// Reset selection when project changes
+  const itemsPerPage = 100;
+  const start = (currentSpritePage.value - 1) * itemsPerPage + 1;
+  const end = Math.min(
+    currentSpritePage.value * itemsPerPage,
+    totalSprites.value
+  );
+  return `${start}-${end}`;
+});
+
+// Navigation functions
+const goToPreviousSpritePage = () => {
+  if (currentSpritePage.value > 1) {
+    goToSpritePage(currentSpritePage.value - 1);
+  }
+};
+
+const goToNextSpritePage = () => {
+  if (currentSpritePage.value < totalSpritePages.value) {
+    goToSpritePage(currentSpritePage.value + 1);
+  }
+};
+
+// Sprite selection
+const selectSprite = (sprite: any) => {
+  selectedSpriteId.value = sprite.id;
+  console.log(`🎨 Selected sprite ${sprite.id}:`, sprite);
+};
+
+// Update page input when current page changes
 watch(
-  () => projectState.isLoaded,
-  (isLoaded) => {
-    if (!isLoaded) {
-      selectedSprite.value = null;
-    }
+  () => currentSpritePage.value,
+  (newPage) => {
+    spritePageInput.value = newPage;
   }
 );
-</script>
 
-<style scoped>
-.pixelated {
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-  image-rendering: crisp-edges;
-}
-</style>
+// CSS for pixelated sprites - only on client side
+onMounted(() => {
+  if (process.client) {
+    const style = document.createElement("style");
+    style.textContent = `
+      .pixelated {
+        image-rendering: -moz-crisp-edges;
+        image-rendering: -webkit-crisp-edges;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+});
+</script>
