@@ -66,6 +66,54 @@ const MetadataFlags1098 = {
   CLOTH: 0x21,
   MARKET_ITEM: 0x22,
   DEFAULT_ACTION: 0x23,
+  WRAPPABLE: 0x24,
+  UNWRAPPABLE: 0x25,
+  TOP_EFFECT: 0x26,
+  // Additional flags found in 10.98 files
+  CHARGED: 0x27,
+  CORPSE: 0x28,
+  PLAYER_CORPSE: 0x29,
+  CYCLOPEDIA: 0x2a,
+  AMMO: 0x2b,
+  SHOW_OFF_SOCKET: 0x2c,
+  REPORTABLE: 0x2d,
+  UPGRADABLE: 0x2e,
+  REVERSE_ADDONS: 0x2f,
+  EXCLUDE_ADDONS: 0x30,
+  OUTFIT_FRAME: 0x31,
+  NPC_SALE_DATA: 0x32,
+  CHANG_LOOKTYPE: 0x33,
+  HEIGHT: 0x34,
+  LYING_CORPSE: 0x35,
+  ANIMATE_NEVER: 0x36,
+  AUTO_WALL: 0x37,
+  AUTO_WALL_BORDER: 0x38,
+  IGNORE_ZONES: 0x39,
+  QUEST_ITEM: 0x3a,
+  TRADE: 0x3b,
+  EXPIRE: 0x3c,
+  EXPIRE_STOP: 0x3d,
+  CLOCK: 0x3e,
+  MIMIC: 0x3f,
+  WRAP_KIT: 0x40,
+  UNWRAP_KIT: 0x41,
+  TOPORDER: 0x42,
+  PODIUM: 0x43,
+  SUPPRESS_DRAPE: 0x44,
+  CLASSIFICATION: 0x45,
+  REVERSE_EAST_WEST: 0x46,
+  BOSS: 0x47,
+  RARE: 0x48,
+  // Additional unknown flags we're encountering
+  UNKNOWN_50: 0x50,
+  UNKNOWN_54: 0x54,
+  UNKNOWN_5F: 0x5f,
+  UNKNOWN_64: 0x64,
+  UNKNOWN_8E: 0x8e,
+  UNKNOWN_90: 0x90,
+  UNKNOWN_C8: 0xc8,
+  UNKNOWN_DD: 0xdd,
+  USABLE: 0xfe,
   LAST_FLAG: 0xff,
 };
 
@@ -191,6 +239,57 @@ export function detectProtocolFromSignatures(
 }
 
 /**
+ * Diagnostic function to examine raw bytes around a specific position
+ */
+function examineBytes(
+  reader: BinaryReader,
+  position: number,
+  context: string
+): void {
+  const currentPos = reader.currentPosition;
+  const startPos = Math.max(0, position - 20);
+  const endPos = Math.min(reader.length, position + 20);
+
+  reader.currentPosition = startPos;
+  const bytes: number[] = [];
+
+  for (let i = startPos; i < endPos; i++) {
+    if (reader.bytesAvailable > 0) {
+      bytes.push(reader.readUint8());
+    }
+  }
+
+  reader.currentPosition = currentPos; // Restore position
+
+  console.log(`🔍 ${context} - Bytes around position ${position}:`);
+  console.log(
+    `   Position: ${startPos.toString().padStart(8)} to ${endPos
+      .toString()
+      .padStart(8)}`
+  );
+  console.log(
+    `   Hex:      ${bytes
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ")}`
+  );
+  console.log(
+    `   Decimal:  ${bytes.map((b) => b.toString().padStart(3)).join(" ")}`
+  );
+  console.log(
+    `   ASCII:    ${bytes
+      .map((b) => (b >= 32 && b <= 126 ? String.fromCharCode(b) : "."))
+      .join(" ")}`
+  );
+
+  // Highlight the target position
+  const targetIndex = position - startPos;
+  if (targetIndex >= 0 && targetIndex < bytes.length) {
+    const highlight = " ".repeat(targetIndex * 3) + "^^^";
+    console.log(`   Target:   ${highlight}`);
+  }
+}
+
+/**
  * Parse DAT file based on protocol version
  */
 export async function parseDatFile(
@@ -223,12 +322,29 @@ export async function parseDatFile(
 
     console.log("Using protocol:", protocol.version);
 
+    const initialPosition = reader.currentPosition;
+    console.log(`📍 Starting items parsing at position: ${initialPosition}`);
+
     // Parse items
     const items: ThingType[] = [];
     let successfulItems = 0;
     let failedItems = 0;
+    let unknownFlagItems = 0; // Track items with unknown flags
 
-    for (let i = 100; i < 100 + itemCount; i++) {
+    // Debug mode: limit to last 3 items to see transition clearly
+    const debugMode = false;
+    const itemStart = debugMode ? Math.max(100, 100 + itemCount - 3) : 100;
+    const itemEnd = 100 + itemCount;
+
+    console.log(
+      `📍 Parsing items from ${itemStart} to ${itemEnd - 1} (${
+        debugMode ? "DEBUG MODE - limited range" : "full range"
+      })`
+    );
+
+    for (let i = itemStart; i < itemEnd; i++) {
+      const beforePosition = reader.currentPosition;
+
       try {
         const thing = parseThingType(reader, i, ThingCategory.ITEM, protocol);
         if (thing) {
@@ -240,7 +356,28 @@ export async function parseDatFile(
       } catch (error) {
         console.warn(`Failed to parse item ${i}:`, error);
         failedItems++;
+
+        // Check if error is due to unknown flag
+        if (error instanceof Error && error.message.includes("Unknown flag")) {
+          unknownFlagItems++;
+        }
+
         // Continue with next item
+      }
+
+      // Log position change for all items in debug mode
+      const afterPosition = reader.currentPosition;
+      const bytesConsumed = afterPosition - beforePosition;
+
+      if (
+        debugMode ||
+        i <= 105 ||
+        bytesConsumed === 0 ||
+        bytesConsumed > 1000
+      ) {
+        console.log(
+          `📍 Item ${i}: pos ${beforePosition} → ${afterPosition} (${bytesConsumed} bytes)`
+        );
       }
 
       // Stop if too many failures (corrupted file)
@@ -248,14 +385,27 @@ export async function parseDatFile(
         console.warn("Too many parsing failures, stopping item parsing");
         break;
       }
+
+      // We've improved error recovery, so continue parsing even with unknown flags
     }
+
+    const itemsEndPosition = reader.currentPosition;
+    console.log(
+      `📍 Finished items parsing at position: ${itemsEndPosition}, bytes available: ${reader.bytesAvailable}`
+    );
 
     // Parse outfits
     const outfits: ThingType[] = [];
     let successfulOutfits = 0;
     let failedOutfits = 0;
 
+    console.log(
+      `📍 Starting outfits parsing at position: ${reader.currentPosition}`
+    );
+
     for (let i = 1; i <= outfitCount; i++) {
+      const beforePosition = reader.currentPosition;
+
       try {
         const thing = parseThingType(reader, i, ThingCategory.OUTFIT, protocol);
         if (thing) {
@@ -267,6 +417,15 @@ export async function parseDatFile(
       } catch (error) {
         console.warn(`Failed to parse outfit ${i}:`, error);
         failedOutfits++;
+      }
+
+      const afterPosition = reader.currentPosition;
+      const bytesConsumed = afterPosition - beforePosition;
+
+      if (i <= 5) {
+        console.log(
+          `📍 Outfit ${i}: pos ${beforePosition} → ${afterPosition} (${bytesConsumed} bytes)`
+        );
       }
 
       // Stop if too many failures
@@ -459,6 +618,8 @@ function parseThingType(
       );
     }
 
+    const startPosition = reader.currentPosition;
+
     // Use protocol-specific parsing
     if (protocol.version === "10.98") {
       parseProperties1098(reader, thing);
@@ -466,9 +627,12 @@ function parseThingType(
       parseProperties1286(reader, thing);
     }
 
+    const endPosition = reader.currentPosition;
+    const bytesRead = endPosition - startPosition;
+
     if (category !== ThingCategory.ITEM && id <= 3) {
       console.log(
-        `📖 Properties parsed for ${category} ${id}, moving to texture patterns`
+        `📖 Properties parsed for ${category} ${id}, bytes read: ${bytesRead}, moving to texture patterns`
       );
     }
 
@@ -510,6 +674,13 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
   let flag = 0;
   let flagCount = 0;
   const maxFlags = 50; // Safety limit
+  const shouldLog = thing.category !== ThingCategory.ITEM && thing.id <= 3;
+
+  if (shouldLog) {
+    console.log(
+      `🏷️ Starting properties parsing for ${thing.category} ${thing.id}`
+    );
+  }
 
   while (flag !== MetadataFlags1098.LAST_FLAG && flagCount < maxFlags) {
     if (reader.bytesAvailable < 1) {
@@ -522,7 +693,20 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
     flag = reader.readUint8();
     flagCount++;
 
+    if (shouldLog) {
+      console.log(
+        `🏷️ Read flag 0x${flag.toString(16)} (${flagCount}) for ${
+          thing.category
+        } ${thing.id}`
+      );
+    }
+
     if (flag === MetadataFlags1098.LAST_FLAG) {
+      if (shouldLog) {
+        console.log(
+          `🏷️ Found LAST_FLAG (0xFF) for ${thing.category} ${thing.id}, total flags: ${flagCount}`
+        );
+      }
       break;
     }
 
@@ -532,6 +716,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.isGround = true;
           if (reader.bytesAvailable >= 2) {
             thing.groundSpeed = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Ground speed: ${thing.groundSpeed}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read ground speed for thing ${thing.id}`
@@ -542,36 +729,62 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
 
         case MetadataFlags1098.GROUND_BORDER:
           thing.isGroundBorder = true;
+          if (shouldLog) {
+            console.log(`🏷️ Ground border flag`);
+          }
           break;
 
         case MetadataFlags1098.ON_BOTTOM:
           thing.isOnBottom = true;
+          if (shouldLog) {
+            console.log(`🏷️ On bottom flag`);
+          }
           break;
 
         case MetadataFlags1098.ON_TOP:
           thing.isOnTop = true;
+          if (shouldLog) {
+            console.log(`🏷️ On top flag`);
+          }
           break;
 
         case MetadataFlags1098.CONTAINER:
           thing.isContainer = true;
+          if (shouldLog) {
+            console.log(`🏷️ Container flag`);
+          }
           break;
 
         case MetadataFlags1098.STACKABLE:
           thing.stackable = true;
+          if (shouldLog) {
+            console.log(`🏷️ Stackable flag`);
+          }
           break;
 
         case MetadataFlags1098.FORCE_USE:
           thing.forceUse = true;
+          if (shouldLog) {
+            console.log(`🏷️ Force use flag`);
+          }
           break;
 
         case MetadataFlags1098.MULTI_USE:
           thing.multiUse = true;
+          if (shouldLog) {
+            console.log(`🏷️ Multi use flag`);
+          }
           break;
 
         case MetadataFlags1098.WRITABLE:
           thing.writable = true;
           if (reader.bytesAvailable >= 2) {
             thing.maxTextLength = reader.readUint16();
+            if (shouldLog) {
+              console.log(
+                `🏷️ Writable, max text length: ${thing.maxTextLength}`
+              );
+            }
           } else {
             console.warn(
               `Not enough bytes to read text length for thing ${thing.id}`
@@ -584,6 +797,11 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.writableOnce = true;
           if (reader.bytesAvailable >= 2) {
             thing.maxTextLength = reader.readUint16();
+            if (shouldLog) {
+              console.log(
+                `🏷️ Writable once, max text length: ${thing.maxTextLength}`
+              );
+            }
           } else {
             console.warn(
               `Not enough bytes to read text length for thing ${thing.id}`
@@ -645,6 +863,11 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           if (reader.bytesAvailable >= 4) {
             thing.lightLevel = reader.readUint16();
             thing.lightColor = reader.readUint16();
+            if (shouldLog) {
+              console.log(
+                `🏷️ Light: level=${thing.lightLevel}, color=${thing.lightColor}`
+              );
+            }
           } else {
             console.warn(
               `Not enough bytes to read light data for thing ${thing.id}`
@@ -667,6 +890,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           if (reader.bytesAvailable >= 4) {
             thing.offsetX = reader.readInt16();
             thing.offsetY = reader.readInt16();
+            if (shouldLog) {
+              console.log(`🏷️ Offset: x=${thing.offsetX}, y=${thing.offsetY}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read offset data for thing ${thing.id}`
@@ -680,6 +906,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.hasElevation = true;
           if (reader.bytesAvailable >= 2) {
             thing.elevation = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Elevation: ${thing.elevation}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read elevation for thing ${thing.id}`
@@ -700,6 +929,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.miniMap = true;
           if (reader.bytesAvailable >= 2) {
             thing.miniMapColor = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Minimap color: ${thing.miniMapColor}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read minimap color for thing ${thing.id}`
@@ -712,6 +944,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.isLensHelp = true;
           if (reader.bytesAvailable >= 2) {
             thing.lensHelp = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Lens help: ${thing.lensHelp}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read lens help for thing ${thing.id}`
@@ -732,6 +967,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.cloth = true;
           if (reader.bytesAvailable >= 2) {
             thing.clothSlot = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Cloth slot: ${thing.clothSlot}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read cloth slot for thing ${thing.id}`
@@ -751,6 +989,12 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
             thing.marketShowAs = reader.readUint16();
 
             const nameLength = reader.readUint16();
+            if (shouldLog) {
+              console.log(
+                `🏷️ Market item: category=${thing.marketCategory}, nameLength=${nameLength}`
+              );
+            }
+
             if (
               nameLength > 0 &&
               nameLength < 256 &&
@@ -759,6 +1003,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
               thing.marketName = reader.readString(nameLength, "iso-8859-1");
               thing.marketRestrictProfession = reader.readUint16();
               thing.marketRestrictLevel = reader.readUint16();
+              if (shouldLog) {
+                console.log(`🏷️ Market name: "${thing.marketName}"`);
+              }
             } else {
               thing.marketName = "";
               if (nameLength > 0 && reader.bytesAvailable >= nameLength) {
@@ -789,6 +1036,9 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           thing.hasDefaultAction = true;
           if (reader.bytesAvailable >= 2) {
             thing.defaultAction = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Default action: ${thing.defaultAction}`);
+            }
           } else {
             console.warn(
               `Not enough bytes to read default action for thing ${thing.id}`
@@ -797,12 +1047,279 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
           }
           break;
 
+        case MetadataFlags1098.WRAPPABLE:
+          thing.wrappable = true;
+          break;
+
+        case MetadataFlags1098.UNWRAPPABLE:
+          thing.unwrappable = true;
+          break;
+
+        case MetadataFlags1098.TOP_EFFECT:
+          thing.topEffect = true;
+          break;
+
+        case MetadataFlags1098.USABLE:
+          thing.usable = true;
+          break;
+
+        case MetadataFlags1098.CHARGED:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.CORPSE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.PLAYER_CORPSE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.CYCLOPEDIA:
+          // Has cyclopedia data - skip for now
+          if (reader.bytesAvailable >= 2) {
+            const cyclopediaId = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Cyclopedia ID: ${cyclopediaId}`);
+            }
+          }
+          break;
+
+        case MetadataFlags1098.AMMO:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.SHOW_OFF_SOCKET:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.REPORTABLE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.UPGRADABLE:
+          // Has upgrade data - skip for now
+          if (reader.bytesAvailable >= 2) {
+            const upgradeClassification = reader.readUint16();
+            if (shouldLog) {
+              console.log(
+                `🏷️ Upgrade classification: ${upgradeClassification}`
+              );
+            }
+          }
+          break;
+
+        case MetadataFlags1098.REVERSE_ADDONS:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.EXCLUDE_ADDONS:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.OUTFIT_FRAME:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.NPC_SALE_DATA:
+          // Has NPC sale data - skip for now
+          if (reader.bytesAvailable >= 8) {
+            const npcPrice = reader.readUint32();
+            const npcSaleFlag = reader.readUint32();
+            if (shouldLog) {
+              console.log(
+                `🏷️ NPC sale data: price=${npcPrice}, flag=${npcSaleFlag}`
+              );
+            }
+          }
+          break;
+
+        case MetadataFlags1098.CHANG_LOOKTYPE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.HEIGHT:
+          // Has height data
+          if (reader.bytesAvailable >= 2) {
+            const height = reader.readUint16();
+            if (shouldLog) {
+              console.log(`🏷️ Height: ${height}`);
+            }
+          }
+          break;
+
+        case MetadataFlags1098.LYING_CORPSE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.ANIMATE_NEVER:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.AUTO_WALL:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.AUTO_WALL_BORDER:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.IGNORE_ZONES:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.QUEST_ITEM:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.TRADE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.EXPIRE:
+          // Has expire time
+          if (reader.bytesAvailable >= 4) {
+            const expireTime = reader.readUint32();
+            if (shouldLog) {
+              console.log(`🏷️ Expire time: ${expireTime}`);
+            }
+          }
+          break;
+
+        case MetadataFlags1098.EXPIRE_STOP:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.CLOCK:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.MIMIC:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.WRAP_KIT:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.UNWRAP_KIT:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.TOPORDER:
+          // Has top order data
+          if (reader.bytesAvailable >= 1) {
+            const topOrder = reader.readUint8();
+            if (shouldLog) {
+              console.log(`🏷️ Top order: ${topOrder}`);
+            }
+          }
+          break;
+
+        case MetadataFlags1098.PODIUM:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.SUPPRESS_DRAPE:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.CLASSIFICATION:
+          // Has classification data
+          if (reader.bytesAvailable >= 1) {
+            const classification = reader.readUint8();
+            if (shouldLog) {
+              console.log(`🏷️ Classification: ${classification}`);
+            }
+          }
+          break;
+
+        case MetadataFlags1098.REVERSE_EAST_WEST:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.BOSS:
+          // No additional data
+          break;
+
+        case MetadataFlags1098.RARE:
+          // No additional data
+          break;
+
+        // Handle the specific unknown flags we're encountering
+        case MetadataFlags1098.UNKNOWN_50:
+        case MetadataFlags1098.UNKNOWN_54:
+        case MetadataFlags1098.UNKNOWN_5F:
+        case MetadataFlags1098.UNKNOWN_64:
+        case MetadataFlags1098.UNKNOWN_8E:
+        case MetadataFlags1098.UNKNOWN_90:
+        case MetadataFlags1098.UNKNOWN_C8:
+        case MetadataFlags1098.UNKNOWN_DD:
+          // These appear to be data rather than flags - skip them
+          if (shouldLog) {
+            console.log(
+              `🏷️ Skipping unknown flag/data: 0x${flag.toString(16)}`
+            );
+          }
+          break;
+
         default:
           console.warn(
-            `Unknown flag 0x${flag.toString(16)} for ${thing.category} ${
+            `⚠️ Unknown flag 0x${flag.toString(16)} for ${thing.category} ${
               thing.id
-            } in protocol 10.98`
+            } in protocol 10.98 at position ${reader.currentPosition - 1}`
           );
+
+          // Check if this looks like sprite ID data rather than flags
+          // Sprite IDs often repeat in patterns and are not valid flags
+          const isLikelySpiteData =
+            flag > 0x50 &&
+            (flag === 0x64 ||
+              flag === 0xc8 ||
+              flag === 0xdd ||
+              flag === 0x54 ||
+              flag === 0x5f ||
+              flag === 0x8e ||
+              flag === 0x90);
+
+          if (isLikelySpiteData) {
+            console.warn(
+              `🔍 Flag 0x${flag.toString(
+                16
+              )} looks like sprite data, treating as end of flags for ${
+                thing.category
+              } ${thing.id}`
+            );
+            // Rewind one byte and treat this as the end of flags
+            reader.currentPosition -= 1;
+            flag = MetadataFlags1098.LAST_FLAG;
+            break;
+          }
+
+          // For unknown flags, we don't know how many bytes to skip
+          // This could cause alignment issues - be more graceful about it
+          if (thing.category === ThingCategory.ITEM && flag !== 0xff) {
+            console.warn(
+              `❓ Unknown flag 0x${flag.toString(16)} in ITEM ${
+                thing.id
+              } - attempting to continue parsing`
+            );
+
+            // Log surrounding context for debugging
+            if (shouldLog || thing.id <= 200) {
+              console.log(`📊 Item ${thing.id} unknown flag context:`, {
+                position: reader.currentPosition - 1,
+                flag: `0x${flag.toString(16)} (${flag})`,
+                bytesAvailable: reader.bytesAvailable,
+                flagCount: flagCount,
+              });
+            }
+
+            // Instead of aborting, treat this as the end of flags and break
+            // This allows parsing to continue for other items
+            flag = MetadataFlags1098.LAST_FLAG;
+            continue;
+          }
           break;
       }
     } catch (flagError) {
@@ -812,6 +1329,12 @@ function parseProperties1098(reader: BinaryReader, thing: ThingType): void {
       );
       break;
     }
+  }
+
+  if (shouldLog) {
+    console.log(
+      `🏷️ Finished properties parsing for ${thing.category} ${thing.id}, processed ${flagCount} flags`
+    );
   }
 }
 
@@ -1113,19 +1636,40 @@ function parseTexturePatterns(
         console.warn(
           `Invalid frame group patterns for thing ${thing.id}: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
         );
-        // Create a minimal safe frame group
-        thing.frameGroups[FrameGroupType.DEFAULT] = {
-          type: FrameGroupType.DEFAULT,
-          width: 1,
-          height: 1,
-          layers: 1,
-          patternX: 1,
-          patternY: 1,
-          patternZ: 1,
-          frames: 1,
-          spriteIds: [],
-        };
-        continue;
+
+        // For effects and missiles with zero values, apply minimal corrections
+        if (
+          thing.category === ThingCategory.EFFECT ||
+          thing.category === ThingCategory.MISSILE
+        ) {
+          frameGroup.patternX =
+            frameGroup.patternX > 0 ? frameGroup.patternX : 1;
+          frameGroup.patternY =
+            frameGroup.patternY > 0 ? frameGroup.patternY : 1;
+          frameGroup.patternZ =
+            frameGroup.patternZ > 0 ? frameGroup.patternZ : 1;
+          frameGroup.frames = frameGroup.frames > 0 ? frameGroup.frames : 1;
+
+          if (shouldLog) {
+            console.log(
+              `🔧 Corrected ${thing.category} ${thing.id} patterns to: ${frameGroup.patternX}x${frameGroup.patternY}x${frameGroup.patternZ}, frames: ${frameGroup.frames}`
+            );
+          }
+        } else {
+          // Create a minimal safe frame group with corrected values for other categories
+          thing.frameGroups[FrameGroupType.DEFAULT] = {
+            type: FrameGroupType.DEFAULT,
+            width: 1,
+            height: 1,
+            layers: 1,
+            patternX: frameGroup.patternX > 0 ? frameGroup.patternX : 1,
+            patternY: frameGroup.patternY > 0 ? frameGroup.patternY : 1,
+            patternZ: frameGroup.patternZ > 0 ? frameGroup.patternZ : 1,
+            frames: frameGroup.frames > 0 ? frameGroup.frames : 1,
+            spriteIds: [],
+          };
+          continue;
+        }
       }
 
       // Update thing dimensions from first frame group
@@ -1153,8 +1697,19 @@ function parseTexturePatterns(
         console.log(`🎨 Total sprites needed: ${totalSprites}`);
       }
 
+      // Handle zero sprite counts correctly
+      if (totalSprites === 0) {
+        if (shouldLog) {
+          console.log(`🎨 Total sprites is 0, skipping sprite ID reading`);
+        }
+
+        // Store the frame group with empty sprite array
+        thing.frameGroups[frameGroup.type] = frameGroup;
+        continue;
+      }
+
       // Validate total sprites count
-      if (totalSprites <= 0 || totalSprites > 4096) {
+      if (totalSprites < 0 || totalSprites > 4096) {
         console.warn(
           `Invalid sprites count for thing ${thing.id}: ${totalSprites}, creating minimal frame group`
         );

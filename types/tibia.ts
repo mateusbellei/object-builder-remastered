@@ -375,6 +375,7 @@ export interface ProtocolVersion {
   hasExtended: boolean;
   hasFrameGroups: boolean;
   hasImprovedAnimations: boolean;
+  hasPatternsZ: boolean;
   clientVersionMin: number;
   clientVersionMax: number;
 }
@@ -387,6 +388,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     hasExtended: false,
     hasFrameGroups: false,
     hasImprovedAnimations: false,
+    hasPatternsZ: false,
     clientVersionMin: 710,
     clientVersionMax: 759,
   },
@@ -397,6 +399,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     hasExtended: false,
     hasFrameGroups: false,
     hasImprovedAnimations: false,
+    hasPatternsZ: true,
     clientVersionMin: 760,
     clientVersionMax: 859,
   },
@@ -407,6 +410,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     hasExtended: true,
     hasFrameGroups: false,
     hasImprovedAnimations: false,
+    hasPatternsZ: true,
     clientVersionMin: 860,
     clientVersionMax: 985,
   },
@@ -417,6 +421,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     hasExtended: true,
     hasFrameGroups: false,
     hasImprovedAnimations: false,
+    hasPatternsZ: true,
     clientVersionMin: 986,
     clientVersionMax: 1097,
   },
@@ -427,6 +432,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     hasExtended: true,
     hasFrameGroups: true,
     hasImprovedAnimations: true,
+    hasPatternsZ: true,
     clientVersionMin: 1098,
     clientVersionMax: 1199,
   },
@@ -437,6 +443,7 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion> = {
     hasExtended: true,
     hasFrameGroups: true,
     hasImprovedAnimations: true,
+    hasPatternsZ: true,
     clientVersionMin: 1200,
     clientVersionMax: 99999,
   },
